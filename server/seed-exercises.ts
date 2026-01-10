@@ -205,7 +205,7 @@ async function seedExercises() {
           name: swedishName,
           nameEn: ex.name,
           category: ex.category,
-          difficulty: ex.difficulty.toLowerCase(),
+          difficulty: ex.difficulty,
           primaryMuscles: [primaryMuscle],
           secondaryMuscles: [],
           requiredEquipment: [equipment],
@@ -214,13 +214,7 @@ async function seedExercises() {
           description: null,
           movementPattern: null,
           instructions: null,
-        }).onConflictDoUpdate({
-          target: exercises.name,
-          set: {
-            youtubeUrl: ex.video_url,
-            nameEn: ex.name,
-          }
-        });
+        }).onConflictDoNothing(); // Skip if already exists
         
         inserted++;
         

@@ -51,8 +51,6 @@ import {
   userSubscriptions,
   trainingTips,
   profileTrainingTips,
-  exercises,
-  equipmentCatalog,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, gte, sql, inArray, isNull, isNotNull } from "drizzle-orm";
@@ -1058,7 +1056,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createProgramTemplatesFromAI(userId: string, aiProgramData: any): Promise<void> {
-    const { getReferenceWeight } = await import("./lib/referenceWeights");
+    const { getReferenceWeight } = await import("../lib/referenceWeights");
     
     console.log("[STORAGE] createProgramTemplatesFromAI called for userId:", userId);
     console.log("[STORAGE] aiProgramData:", JSON.stringify(aiProgramData).substring(0, 300));
@@ -1129,127 +1127,14 @@ export class DatabaseStorage implements IStorage {
 
   async createProgramTemplatesFromDeepSeek(userId: string, program: import("./ai-service").DeepSeekWorkoutProgram): Promise<void> {
     console.log("[STORAGE] createProgramTemplatesFromDeepSeek called for userId:", userId);
+    console.log("[STORAGE] Program overview:", program.program_overview.week_focus_summary);
     
-    // Set isGeneratingProgram = true at the start
-    await db.update(userProfiles).set({ isGeneratingProgram: true }).where(eq(userProfiles.userId, userId));
+    const weeklySessions = program.weekly_sessions || [];
+    console.log("[STORAGE] Number of weekly sessions:", weeklySessions.length);
     
-    try {
-      console.log("[STORAGE] Program overview:", program.program_overview.week_focus_summary);
-      
-      const weeklySessions = program.weekly_sessions || [];
-      console.log("[STORAGE] Number of weekly sessions:", weeklySessions.length);
-      
-      // Import weight utilities
-      const { getReferenceWeight } = await import("./lib/referenceWeights");
-      
-      if (weeklySessions.length === 0) {
-        throw new Error("No weekly sessions found in generated program");
-      }
-      
-      // Clear existing templates for atomic update
-      await this.clearUserProgramTemplates(userId);
-
-      // = ... availableEquipment setup ...
-    
-    // ============================================================
-    // EQUIPMENT VALIDATION SETUP
-    // Fetch user's available equipment upfront for post-validation
-    // ============================================================
-    
-    // Get user's selected gym
-    const [profile] = await db
-      .select()
-      .from(userProfiles)
-      .where(eq(userProfiles.userId, userId))
-      .limit(1);
-    
-    const selectedGymId = profile?.selectedGymId || null;
-    
-    // Fetch equipment for the selected gym (or all user equipment if no gym selected)
-    let userEquipmentQuery;
-    if (selectedGymId) {
-      userEquipmentQuery = db
-        .select()
-        .from(userEquipment)
-        .where(and(eq(userEquipment.userId, userId), eq(userEquipment.gymId, selectedGymId)));
-      console.log(`[EQUIPMENT VALIDATION] Using equipment from gym: ${selectedGymId}`);
-    } else {
-      userEquipmentQuery = db
-        .select()
-        .from(userEquipment)
-        .where(eq(userEquipment.userId, userId));
-      console.log("[EQUIPMENT VALIDATION] No gym selected - using all user equipment");
+    if (weeklySessions.length === 0) {
+      throw new Error("No weekly sessions found in generated program");
     }
-    
-    const userEquipmentList = await userEquipmentQuery;
-    
-    // iOS app may send equipment IDs instead of names - resolve UUIDs to names from catalog
-    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-    
-    // Get all equipment IDs that look like UUIDs
-    const uuidEquipment = userEquipmentList.filter(eq => isUUID(eq.equipmentName));
-    const normalEquipment = userEquipmentList.filter(eq => !isUUID(eq.equipmentName));
-    
-    // Lookup names from equipment catalog for UUIDs
-    let resolvedEquipmentNames: string[] = normalEquipment.map(eq => eq.equipmentName.toLowerCase().trim());
-    
-    if (uuidEquipment.length > 0) {
-      const uuids = uuidEquipment.map(eq => eq.equipmentName);
-      const catalogItems = await db
-        .select({ id: equipmentCatalog.id, name: equipmentCatalog.name })
-        .from(equipmentCatalog)
-        .where(sql`${equipmentCatalog.id} = ANY(ARRAY[${sql.join(uuids.map(u => sql`${u}`), sql`, `)}]::varchar[])`);
-      
-      const catalogNames = catalogItems.map(item => item.name.toLowerCase().trim());
-      resolvedEquipmentNames = [...resolvedEquipmentNames, ...catalogNames];
-      console.log(`[EQUIPMENT VALIDATION] Resolved ${uuidEquipment.length} UUIDs to names:`, catalogNames);
-    }
-    
-    const availableEquipment = resolvedEquipmentNames;
-    console.log(`[EQUIPMENT VALIDATION] User has ${availableEquipment.length} pieces of equipment:`, availableEquipment);
-    
-    // Helper function to normalize equipment names for comparison
-    const normalizeEquipment = (name: string) => name.toLowerCase().trim();
-    
-    // Helper function to check if exercise's required equipment is available
-    const isEquipmentAvailable = (requiredEquipment: string[]): { available: boolean; missingEquipment: string[] } => {
-      if (!requiredEquipment || requiredEquipment.length === 0) {
-        // Bodyweight exercise - always available
-        return { available: true, missingEquipment: [] };
-      }
-      
-      const missing: string[] = [];
-      for (const required of requiredEquipment) {
-        const normalizedRequired = normalizeEquipment(required);
-        
-        // Skip "unknown", "bodyweight", "none" equipment
-        if (normalizedRequired === 'unknown' || normalizedRequired === 'bodyweight' || normalizedRequired === 'none') continue;
-        
-        // Check if any available equipment matches
-        const found = availableEquipment.some(avail => {
-          // Exact match
-          if (avail === normalizedRequired) return true;
-          // Partial match (e.g., "olympic barbell" contains "barbell")
-          if (avail.includes(normalizedRequired) || normalizedRequired.includes(avail)) return true;
-          // Common synonyms
-          if ((avail.includes('dumbbell') && normalizedRequired.includes('hantel')) ||
-              (avail.includes('hantel') && normalizedRequired.includes('dumbbell'))) return true;
-          if ((avail.includes('barbell') && normalizedRequired.includes('skivstång')) ||
-              (avail.includes('skivstång') && normalizedRequired.includes('barbell'))) return true;
-          return false;
-        });
-        
-        if (!found) {
-          missing.push(required);
-        }
-      }
-      
-      return { available: missing.length === 0, missingEquipment: missing };
-    };
-    
-    // ============================================================
-    // END EQUIPMENT VALIDATION SETUP
-    // ============================================================
     
     // Weekday mapping: Swedish weekday → integer (1=Monday, 7=Sunday)
     const weekdayToNumber: Record<string, number> = {
@@ -1266,32 +1151,16 @@ export class DatabaseStorage implements IStorage {
     
     for (let i = 0; i < weeklySessions.length; i++) {
       const session = weeklySessions[i];
+      const templateName = `Pass ${letters[i] || i + 1}`;
       
       // Map AI's weekday to dayOfWeek integer
       const weekdayStr = session.weekday?.toLowerCase() || '';
-      let dayOfWeek = weekdayToNumber[weekdayStr] || null;
+      const dayOfWeek = weekdayToNumber[weekdayStr] || null;
       
-      // Fallback: If AI didn't provide weekday, assign default based on session count
-      if (dayOfWeek === null) {
-        const totalSessions = weeklySessions.length;
-        // Default day patterns based on number of sessions per week
-        const defaultDayPatterns: { [key: number]: number[] } = {
-          1: [1],                      // Mon
-          2: [1, 4],                   // Mon, Thu
-          3: [1, 3, 5],                // Mon, Wed, Fri
-          4: [1, 2, 4, 6],             // Mon, Tue, Thu, Sat
-          5: [1, 2, 3, 4, 5],          // Mon-Fri
-          6: [1, 2, 3, 4, 5, 6],       // Mon-Sat
-          7: [1, 2, 3, 4, 5, 6, 7],    // Every day
-        };
-        const pattern = defaultDayPatterns[totalSessions] || defaultDayPatterns[Math.min(totalSessions, 7)];
-        dayOfWeek = pattern[i] || (i % 7) + 1;
-        console.log(`[STORAGE] No weekday from AI, using default day pattern: session ${i + 1}/${totalSessions} → dayOfWeek=${dayOfWeek}`);
-      }
+      console.log(`[STORAGE] Creating template ${i + 1}/${weeklySessions.length}: ${templateName} - ${session.session_name} (${session.weekday} → dayOfWeek=${dayOfWeek}, ${session.estimated_duration_minutes}min)`);
       
-      // Generate muscle_focus - this will also be used as templateName
-      // Priority: muscle_focus > session_name > generated from exercises > fallback "Pass A/B/C"
-      let muscleFocus = session.muscle_focus || session.session_name || null;
+      // Generate muscle_focus if AI didn't provide it (defensive fallback)
+      let muscleFocus = session.muscle_focus || null;
       if (!muscleFocus && session.main_work && session.main_work.length > 0) {
         const muscles = new Set<string>();
         session.main_work.forEach((ex: any) => {
@@ -1317,12 +1186,6 @@ export class DatabaseStorage implements IStorage {
         }
       }
       
-      // Use muscleFocus as the template name, with fallback to "Pass A/B/C"
-      const fallbackName = `Pass ${letters[i] || i + 1}`;
-      const templateName = muscleFocus || fallbackName;
-      
-      console.log(`[STORAGE] Creating template ${i + 1}/${weeklySessions.length}: "${templateName}" (day=${dayOfWeek}, ${session.estimated_duration_minutes}min)`);
-      
       const [template] = await db
         .insert(programTemplates)
         .values({
@@ -1334,8 +1197,7 @@ export class DatabaseStorage implements IStorage {
         })
         .returning();
       
-      // Support both field names: main_work (legacy) and main_workout (V3)
-      const mainWorkExercises = session.main_work || session.main_workout || [];
+      const mainWorkExercises = session.main_work || [];
       console.log(`[STORAGE] Template ${templateName} has ${mainWorkExercises.length} main exercises`);
       
       if (mainWorkExercises.length === 0) {
@@ -1382,191 +1244,30 @@ export class DatabaseStorage implements IStorage {
         }
         
         // CRITICAL VALIDATION: Enforce English-only exercise names
-        // Check if the matched name is English (canonical names are in English)
-        // If the AI name was Swedish, it should have been matched to an English canonical name
-        const hasSwedishCharsInMatched = /[åäöÅÄÖ]/.test(finalExerciseName);
+        const hasSwedishChars = /[åäöÅÄÖ]/.test(finalExerciseName);
+        const hasSwedishWords = finalExerciseName.toLowerCase().includes('böj') || 
+                                finalExerciseName.toLowerCase().includes('lyft') ||
+                                (finalExerciseName.toLowerCase().includes('press') && finalExerciseName.toLowerCase().includes('bänk'));
         
-        if (hasSwedishCharsInMatched) {
-          console.error(`[VALIDATION ERROR] ❌ Swedish exercise name detected in matched catalog: "${finalExerciseName}" - SKIPPING`);
+        if (hasSwedishChars || hasSwedishWords) {
+          console.error(`[VALIDATION ERROR] ❌ Swedish exercise name detected: "${finalExerciseName}" (AI="${aiGeneratedName}") - SKIPPING`);
+          console.warn(`[VALIDATION] Skipping Swedish exercise to enforce English-only policy`);
           continue; // Skip this exercise - don't insert it
         }
         
         console.log(`[VALIDATION] ✅ English exercise name confirmed: "${finalExerciseName}"`);
-        
-        // ============================================================
-        // POST-VALIDATION: Check if exercise's required equipment is available
-        // PRIORITIZE catalog exercise equipment over AI-provided equipment
-        // ============================================================
-        let requiredEquipment = exercise.required_equipment || [];
-        
-        // If AI didn't provide equipment OR provided 'unknown', look up from catalog using matched exercise ID
-        if ((requiredEquipment.length === 0 || (requiredEquipment.length === 1 && requiredEquipment[0].toLowerCase() === 'unknown')) && matchResult.id) {
-          const catalogExercise = await db
-            .select({ requiredEquipment: exercises.requiredEquipment })
-            .from(exercises)
-            .where(eq(exercises.id, matchResult.id))
-            .limit(1);
-          
-          if (catalogExercise.length > 0 && catalogExercise[0].requiredEquipment) {
-            requiredEquipment = catalogExercise[0].requiredEquipment;
-            console.log(`[EQUIPMENT VALIDATION] 📋 Using catalog equipment for "${finalExerciseName}": ${requiredEquipment.join(', ')}`);
-          }
-        }
-        
-        const equipmentCheck = isEquipmentAvailable(requiredEquipment);
-        
-        let exerciseToInsert = {
-          name: finalExerciseName,
-          key: exerciseKey,
-          sets: exercise.sets || 3,
-          reps: validatedReps,
-          weight: (() => {
-            // Already has weight from AI
-            if (exercise.suggested_weight_kg && exercise.suggested_weight_kg > 0) {
-              return Math.round(exercise.suggested_weight_kg);
-            }
-            
-            const normalizedName = finalExerciseName.toLowerCase();
-            
-            // 1. Bodyweight check (don't treat "unknown" as bodyweight)
-            const isBodyweight = requiredEquipment.some(eq => 
-              eq.toLowerCase().includes('bodyweight') || 
-              eq.toLowerCase().includes('kroppsvikt') ||
-              eq.toLowerCase() === 'none'
-            );
-            if (isBodyweight) return 0;
-            
-            // 2. 1RM based calculation for compounds
-            if (normalizedName.includes('bench press') || normalizedName.includes('bänkpress')) {
-              if (profile?.oneRmBench) return Math.round(profile.oneRmBench * 0.65); // Starting safe at 65%
-            }
-            if (normalizedName.includes('squat') || (normalizedName.includes('knäböj') && !normalizedName.includes('utfall'))) {
-              if (profile?.oneRmSquat) return Math.round(profile.oneRmSquat * 0.6);
-            }
-            if (normalizedName.includes('deadlift') || normalizedName.includes('marklyft')) {
-              if (profile?.oneRmDeadlift) return Math.round(profile.oneRmDeadlift * 0.6);
-            }
-            if (normalizedName.includes('overhead press') || normalizedName.includes('axelpress') || normalizedName.includes('ohp')) {
-              if (profile?.oneRmOhp) return Math.round(profile.oneRmOhp * 0.6);
-            }
-            if (normalizedName.includes('lat pull') || normalizedName.includes('latsdrag')) {
-              if (profile?.oneRmLatpull) return Math.round(profile.oneRmLatpull * 0.65);
-            }
-            
-            // 3. Reference weight fallback
-            const ref = getReferenceWeight(finalExerciseName);
-            return ref > 0 ? ref : null;
-          })(),
-          equipment: requiredEquipment,
-          muscles: exercise.target_muscles || [],
-        };
-        
-        if (!equipmentCheck.available) {
-          console.warn(`[EQUIPMENT VALIDATION] ⚠️ Exercise "${finalExerciseName}" requires equipment user doesn't have: ${equipmentCheck.missingEquipment.join(', ')}`);
-          console.warn(`[EQUIPMENT VALIDATION] Required: ${requiredEquipment.join(', ')}`);
-          console.warn(`[EQUIPMENT VALIDATION] User has: ${availableEquipment.join(', ')}`);
-          
-          // Request AI replacement for same muscle group
-          console.log(`[EQUIPMENT VALIDATION] 🔄 Requesting AI replacement for "${finalExerciseName}"...`);
-          
-          try {
-            const { requestExerciseReplacement } = await import("./exercise-replacer");
-            const replacement = await requestExerciseReplacement({
-              originalExercise: finalExerciseName,
-              targetMuscles: exercise.target_muscles || [],
-              availableEquipment: availableEquipment,
-              sets: exercise.sets || 3,
-              reps: validatedReps,
-              userLevel: profile?.trainingLevel || 'intermediate',
-            });
-            
-            if (replacement && replacement.name) {
-              console.log(`[EQUIPMENT VALIDATION] ✅ Got replacement: "${replacement.name}" (Reason: ${replacement.reason})`);
-              
-              // Use the replacement exercise instead
-              const replacementKey = replacement.name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-              exerciseToInsert = {
-                name: replacement.name,
-                key: replacementKey,
-                sets: replacement.sets || exercise.sets || 3,
-                reps: replacement.reps || validatedReps,
-                weight: (() => {
-                   const normalizedName = (replacement.name || "").toLowerCase();
-                   
-                   // 1. Bodyweight check
-                   const isBodyweight = requiredEquipment.some(eq => 
-                     eq.toLowerCase().includes('bodyweight') || 
-                     eq.toLowerCase().includes('kroppsvikt') ||
-                     eq.toLowerCase() === 'none'
-                   );
-                   if (isBodyweight) return 0;
-                   
-                   // 2. 1RM based calculation for compounds
-                   if (normalizedName.includes('bench press') || normalizedName.includes('bänkpress')) {
-                     if (profile?.oneRmBench) return Math.round(profile.oneRmBench * 0.65);
-                   }
-                   if (normalizedName.includes('squat') || (normalizedName.includes('knäböj') && !normalizedName.includes('utfall'))) {
-                     if (profile?.oneRmSquat) return Math.round(profile.oneRmSquat * 0.6);
-                   }
-                   if (normalizedName.includes('deadlift') || normalizedName.includes('marklyft')) {
-                     if (profile?.oneRmDeadlift) return Math.round(profile.oneRmDeadlift * 0.6);
-                   }
-                   if (normalizedName.includes('overhead press') || normalizedName.includes('axelpress') || normalizedName.includes('ohp')) {
-                     if (profile?.oneRmOhp) return Math.round(profile.oneRmOhp * 0.6);
-                   }
-                   if (normalizedName.includes('lat pull') || normalizedName.includes('latsdrag')) {
-                     if (profile?.oneRmLatpull) return Math.round(profile.oneRmLatpull * 0.65);
-                   }
-                   
-                   // 3. Reference weight fallback
-                   const ref = getReferenceWeight(replacement.name || "");
-                   return ref > 0 ? ref : null;
-                })(),
-                equipment: [], // Replacement is guaranteed to work with available equipment
-                muscles: exercise.target_muscles || [],
-              };
-            } else {
-              // No replacement found - log to unmapped_exercises and skip
-              console.warn(`[EQUIPMENT VALIDATION] ❌ No replacement found - logging and skipping "${finalExerciseName}"`);
-              
-              // Log to unmapped_exercises for admin review
-              const { logUnmappedExercise } = await import("./exercise-matcher");
-              await logUnmappedExercise(aiGeneratedName);
-              
-              continue; // Skip this exercise
-            }
-          } catch (replacementError) {
-            console.error(`[EQUIPMENT VALIDATION] ❌ Replacement request failed:`, replacementError);
-            
-            // Log to unmapped_exercises for admin review
-            try {
-              const { logUnmappedExercise } = await import("./exercise-matcher");
-              await logUnmappedExercise(aiGeneratedName);
-            } catch (logError) {
-              console.error(`[EQUIPMENT VALIDATION] Failed to log unmapped exercise:`, logError);
-            }
-            
-            continue; // Skip this exercise
-          }
-        } else {
-          console.log(`[EQUIPMENT VALIDATION] ✅ Equipment check passed for "${finalExerciseName}"`);
-        }
-        // ============================================================
-        // END EQUIPMENT VALIDATION
-        // ============================================================
-        
-        console.log(`[STORAGE] Adding exercise ${j + 1}: AI="${aiGeneratedName}" → Matched="${exerciseToInsert.name}" (${matchResult.confidence}), Reps="${exerciseToInsert.reps}"`);
+        console.log(`[STORAGE] Adding exercise ${j + 1}: AI="${aiGeneratedName}" → Matched="${finalExerciseName}" (${matchResult.confidence}), Reps="${validatedReps}"`);
         
         await db.insert(programTemplateExercises).values({
           templateId: template.id,
-          exerciseKey: exerciseToInsert.key,
-          exerciseName: exerciseToInsert.name,
+          exerciseKey: exerciseKey,
+          exerciseName: finalExerciseName,
           orderIndex: j,
-          targetSets: exerciseToInsert.sets,
-          targetReps: exerciseToInsert.reps,
-          targetWeight: exerciseToInsert.weight,
-          requiredEquipment: exerciseToInsert.equipment,
-          muscles: exerciseToInsert.muscles,
+          targetSets: exercise.sets || 3,
+          targetReps: validatedReps,
+          targetWeight: exercise.suggested_weight_kg ? Math.round(exercise.suggested_weight_kg) : null,
+          requiredEquipment: exercise.required_equipment || [],
+          muscles: exercise.target_muscles || [],
           notes: [
             exercise.technique_cues?.join('. '),
             exercise.suggested_weight_notes,
@@ -1577,70 +1278,7 @@ export class DatabaseStorage implements IStorage {
       }
     }
     
-    // ============================================================
-    // PATTERN CACHING - Save AI response for future local generation
-    // ============================================================
-    try {
-      const { savePattern } = await import("./pattern-collector");
-      
-      // Get user's training preferences for pattern matching
-      const trainingGoal = profile?.motivationType || profile?.trainingGoals || 'general';
-      const trainingLevel = profile?.trainingLevel || 'intermediate';
-      const daysPerWeek = profile?.sessionsPerWeek || weeklySessions.length;
-      const sessionDuration = profile?.sessionDuration || 60;
-      
-      // Format AI response for pattern storage
-      const aiResponseForPattern = {
-        training_split: program.program_overview?.training_split || 'custom',
-        weekly_structure: program.program_overview?.week_focus_summary || null,
-        sessions: weeklySessions.map(session => ({
-          session_name: session.session_name,
-          target_muscle_focus: session.muscle_focus || '',
-          exercises: (session.main_work || []).map((ex: any) => ({
-            exercise_name: ex.exercise_name,
-            target_muscles: ex.target_muscles || [],
-            sets: ex.sets,
-            reps: ex.reps,
-            rest_seconds: ex.rest_seconds,
-            equipment_required: ex.equipment_required || [],
-          })),
-        })),
-      };
-      
-      await savePattern(
-        aiResponseForPattern,
-        {
-          trainingGoal,
-          trainingLevel,
-          daysPerWeek,
-          sessionDuration,
-          goalStrength: profile?.goalStrength ?? 50,
-          goalVolume: profile?.goalVolume ?? 50,
-          goalEndurance: profile?.goalEndurance ?? 50,
-          goalCardio: profile?.goalCardio ?? 50,
-          equipment: availableEquipment,
-        },
-        {
-          aiProvider: 'gemini', // or detect from environment
-          aiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
-        }
-      );
-      
-      console.log("[STORAGE] ✅ Pattern cached for future local generation");
-    } catch (patternError) {
-      // Don't fail program creation if pattern caching fails
-      console.warn("[STORAGE] ⚠️ Failed to cache pattern (non-critical):", patternError);
-    }
-    
-      console.log("[STORAGE] DeepSeek template creation complete");
-    } catch (error) {
-       console.error("[STORAGE] ❌ Error in createProgramTemplatesFromDeepSeek:", error);
-       throw error;
-    } finally {
-       // Always reset generation flag
-       await db.update(userProfiles).set({ isGeneratingProgram: false }).where(eq(userProfiles.userId, userId));
-       console.log("[STORAGE] 🏁 Generation flag reset to false for userId:", userId);
-    }
+    console.log("[STORAGE] DeepSeek template creation complete");
   }
 
   async clearUserProgramTemplates(userId: string): Promise<void> {
@@ -1674,7 +1312,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(userProfiles.userId, userId));
   }
 
-  async getTemplatesWithMetadata(userId: string): Promise<Array<{ template: ProgramTemplate & { exercises: any[] }; exerciseCount: number; isNext: boolean }>> {
+  async getTemplatesWithMetadata(userId: string): Promise<Array<{ template: ProgramTemplate; exerciseCount: number; isNext: boolean }>> {
     const profile = await this.getUserProfile(userId);
     const templates = await this.getUserProgramTemplates(userId);
     
@@ -1693,10 +1331,7 @@ export class DatabaseStorage implements IStorage {
       templates.map(async (template) => {
         const exercises = await this.getTemplateExercises(template.id);
         return {
-          template: {
-            ...template,
-            exercises: exercises, // Include exercises array for iOS compatibility
-          },
+          template,
           exerciseCount: exercises.length,
           isNext: template.id === nextTemplateId,
         };

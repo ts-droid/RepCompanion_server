@@ -65,46 +65,6 @@ export async function setupAuth(app: Express) {
   app.use(passport.initialize());
   app.use(passport.session());
 
-  // Skip Replit Auth if running locally without REPL_ID
-  if (!process.env.REPL_ID) {
-    console.log("[AUTH] Running in local mode - Replit Auth disabled");
-    
-    // Mock login route for local dev
-    app.get("/api/login", (req, res) => {
-      // Create a mock user session
-      const mockUser = {
-        claims: {
-          sub: "local-dev-user",
-          email: "dev@local.host",
-          first_name: "Local",
-          last_name: "Dev",
-          profile_image_url: "https://via.placeholder.com/150",
-          exp: Math.floor(Date.now() / 1000) + 86400 // 24h
-        },
-        access_token: "mock-access-token",
-        refresh_token: "mock-refresh-token",
-        expires_at: Math.floor(Date.now() / 1000) + 86400
-      };
-      
-      req.login(mockUser, async (err) => {
-        if (err) return res.status(500).json({ message: "Login failed" });
-        
-        // Upsert mock user to db
-        await upsertUser(mockUser.claims);
-        
-        res.redirect("/");
-      });
-    });
-
-    app.get("/api/logout", (req, res) => {
-      req.logout(() => {
-        res.redirect("/");
-      });
-    });
-    
-    return;
-  }
-
   const config = await getOidcConfig();
 
   const verify: VerifyFunction = async (

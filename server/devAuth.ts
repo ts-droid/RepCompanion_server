@@ -3,7 +3,7 @@ import { storage } from "./storage";
 
 export const DEV_USER_ID = "dev-user-123";
 
-export async function ensureDevUserExists(): Promise<string> {
+async function ensureDevUserExists() {
   try {
     const existingUser = await storage.getUser(DEV_USER_ID);
     if (!existingUser) {
@@ -15,10 +15,8 @@ export async function ensureDevUserExists(): Promise<string> {
         profileImageUrl: null,
       });
     }
-    return DEV_USER_ID;
   } catch (error) {
     console.error("Error ensuring dev user exists:", error);
-    return DEV_USER_ID; // Return default even on error
   }
 }
 

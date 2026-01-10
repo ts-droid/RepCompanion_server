@@ -447,7 +447,6 @@ export async function seedEquipment() {
     { name: "Dip-station", nameEn: "Dip Station", category: "Tillbehör", type: "Kroppsvikt", description: "Parallella handtag för dips" },
     { name: "Viktbälte", nameEn: "Weight Belt", category: "Tillbehör", type: "Kroppsvikt", description: "Bälte för extra vikt" },
     { name: "Träningselastik", nameEn: "Resistance Bands", category: "Tillbehör", type: "Band", description: "Gummiband för motstånd" },
-    { name: "Maghjul", nameEn: "Ab Wheel", category: "Tillbehör", type: "Core", description: "Rullhjul för magträning" },
     
     // Cardio
     { name: "Löpband", nameEn: "Treadmill", category: "Cardio", type: "Löpning", description: "Elektriskt löpband" },

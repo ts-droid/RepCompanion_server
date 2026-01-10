@@ -185,8 +185,7 @@ export class WorkoutGenerationService {
       3: ["Måndag", "Onsdag", "Fredag"],
       4: ["Måndag", "Tisdag", "Torsdag", "Lördag"],
       5: ["Måndag", "Tisdag", "Torsdag", "Fredag", "Lördag"],
-      6: ["Måndag", "Tisdag", "Onsdag", "Torsdag", "Fredag", "Lördag"],
-      7: ["Måndag", "Tisdag", "Onsdag", "Torsdag", "Fredag", "Lördag", "Söndag"]
+      6: ["Måndag", "Tisdag", "Onsdag", "Torsdag", "Fredag", "Lördag"]
     };
     const sessionsCount = profile.sessionsPerWeek || 3;
     const weekdays = weekdaySchedule[sessionsCount] || weekdaySchedule[3];

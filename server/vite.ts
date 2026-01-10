@@ -5,25 +5,8 @@ import { createServer as createViteServer, createLogger } from "vite";
 import { type Server } from "http";
 import viteConfig from "../vite.config";
 import { nanoid } from "nanoid";
-import { fileURLToPath } from "url";
 
 const viteLogger = createLogger();
-
-// Helper to get directory name - works in both ESM and CommonJS contexts
-function getDirname(): string {
-  // Try import.meta.dirname first (Node.js 20.11+)
-  if (typeof import.meta !== "undefined" && import.meta.dirname) {
-    return import.meta.dirname;
-  }
-  // Fallback to __dirname via fileURLToPath (for older Node or LaunchAgent contexts)
-  try {
-    const __filename = fileURLToPath(import.meta.url);
-    return path.dirname(__filename);
-  } catch {
-    // Final fallback: use process.cwd() and assume we're in server directory
-    return process.cwd().endsWith("server") ? process.cwd() : path.join(process.cwd(), "server");
-  }
-}
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -62,9 +45,8 @@ export async function setupVite(app: Express, server: Server) {
     const url = req.originalUrl;
 
     try {
-      const serverDir = getDirname();
       const clientTemplate = path.resolve(
-        serverDir,
+        import.meta.dirname,
         "..",
         "client",
         "index.html",
@@ -86,11 +68,10 @@ export async function setupVite(app: Express, server: Server) {
 }
 
 export function serveStatic(app: Express) {
-  const serverDir = getDirname();
-  const distPath = path.resolve(serverDir, "public");
+  const distPath = path.resolve(import.meta.dirname, "public");
 
   if (!fs.existsSync(distPath)) {
-    log(`Warning: Build directory not found: ${distPath}. Static serving disabled.`, "express");
+    log(`Warning: Could not find the build directory: ${distPath}. Continuing as API-only server.`);
     return;
   }
 

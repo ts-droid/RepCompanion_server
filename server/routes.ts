@@ -1,12 +1,11 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./auth";
-import { isAuthenticatedOrDev, ensureDevUserExists } from "./devAuth";
-import { insertUserProfileSchema, updateUserProfileSchema, insertGymSchema, updateGymSchema, insertEquipmentSchema, insertWorkoutSessionSchema, insertExerciseLogSchema, updateExerciseLogSchema, suggestAlternativeRequestSchema, suggestAlternativeResponseSchema, trackPromoImpressionSchema, trackAffiliateClickSchema, insertNotificationPreferencesSchema, promoIdParamSchema, promoPlacementParamSchema, generateProgramRequestSchema, exercises, exerciseLogs, workoutSessions, programTemplateExercises, equipmentCatalog, unmappedExercises, unmappedEquipment, exerciseAliases, equipmentAliases, type ExerciseLog } from "@shared/schema";
+import { setupAuth, isAuthenticated } from "./replitAuth";
+import { isAuthenticatedOrDev } from "./devAuth";
+import { insertUserProfileSchema, updateUserProfileSchema, insertGymSchema, updateGymSchema, insertEquipmentSchema, insertWorkoutSessionSchema, insertExerciseLogSchema, updateExerciseLogSchema, suggestAlternativeRequestSchema, suggestAlternativeResponseSchema, trackPromoImpressionSchema, trackAffiliateClickSchema, insertNotificationPreferencesSchema, promoIdParamSchema, promoPlacementParamSchema, generateProgramRequestSchema, exercises, exerciseLogs, workoutSessions, programTemplateExercises, type ExerciseLog } from "@shared/schema";
 import { z, ZodError } from "zod";
-import { analyzeUserProfile, createWorkoutProgram, mapOnboardingToV3Profile } from "./ai-service-v3";
-import { generateV3Program } from "./v3-program-generator";
+import { generateWorkoutProgram, generateWorkoutProgramWithReasoner, generateWorkoutProgramWithVersionSwitch } from "./ai-service";
 import { recognizeEquipmentFromImage } from "./roboflow-service";
 import { promoService } from "./promo-service";
 import { workoutGenerationService } from "./workout-generation-service";
@@ -19,35 +18,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication
   await setupAuth(app);
 
-  // ========== HEALTH CHECK ==========
-  
-  // Basic health check endpoint (no auth required)
-  app.get("/api/health", async (req, res) => {
-    const uptime = process.uptime();
-    const memoryUsage = process.memoryUsage();
-    const serverStartTime = (global as any).SERVER_START_TIME || Date.now();
-    
-    res.json({
-      status: "ok",
-      timestamp: new Date().toISOString(),
-      uptime: Math.floor(uptime),
-      serverStartTime: new Date(serverStartTime).toISOString(),
-      process: {
-        pid: process.pid,
-        nodeVersion: process.version,
-        platform: process.platform,
-      },
-      memory: {
-        heapUsed: Math.round(memoryUsage.heapUsed / 1024 / 1024),
-        heapTotal: Math.round(memoryUsage.heapTotal / 1024 / 1024),
-        rss: Math.round(memoryUsage.rss / 1024 / 1024),
-      },
-      aiVersion: "v3", // Consolidated to V3 only
-    });
-  });
-
-  // ========== AUTH ROUTES ==========
-  
   // ========== AUTH ROUTES ==========
   
   app.get("/api/auth/user", isAuthenticatedOrDev, async (req: any, res) => {
@@ -57,274 +27,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(user);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch user" });
-    }
-  });
-
-  // ========== APPLE SIGN-IN ==========
-  
-  app.post("/api/auth/apple", async (req, res) => {
-    try {
-      const { idToken, authorizationCode } = req.body;
-
-      if (!idToken) {
-        return res.status(400).json({ message: "idToken is required" });
-      }
-
-      // Import auth helpers dynamically to avoid errors if packages aren't installed
-      const { verifyAppleToken, createSessionToken } = await import('./auth-helpers');
-
-      // Verify Apple ID token
-      const decoded = await verifyAppleToken(idToken) as any;
-      
-      const appleUserId = decoded.sub;
-      const email = decoded.email;
-      const emailVerified = decoded.email_verified === 'true' || decoded.email_verified === true;
-      
-      // Create user identifier
-      const userId = `apple_${appleUserId}`;
-      
-      // Extract name from Apple token if available (first time only)
-      // Note: Apple only provides name on first sign-in
-      let firstName: string | null = null;
-      let lastName: string | null = null;
-      
-      // Create or update user
-      const user = await storage.upsertUser({
-        id: userId,
-        email: email || null,
-        firstName: firstName,
-        lastName: lastName
-      });
-      
-      // Create session token
-      const sessionToken = createSessionToken(userId);
-      
-      res.json({
-        token: sessionToken,
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.firstName && user.lastName 
-            ? `${user.firstName} ${user.lastName}` 
-            : user.firstName || null
-        }
-      });
-    } catch (error: any) {
-      console.error("Apple auth error:", error);
-      res.status(401).json({ 
-        message: "Invalid Apple ID token",
-        error: error.message 
-      });
-    }
-  });
-
-  // ========== GOOGLE SIGN-IN ==========
-  
-  app.post("/api/auth/google", async (req, res) => {
-    try {
-      const { idToken, accessToken } = req.body;
-
-      if (!idToken) {
-        return res.status(400).json({ message: "idToken is required" });
-      }
-
-      // Import auth helpers dynamically to avoid errors if packages aren't installed
-      const { verifyGoogleToken, createSessionToken } = await import('./auth-helpers');
-
-      // Verify Google ID token
-      const payload = await verifyGoogleToken(idToken);
-      
-      if (!payload) {
-        return res.status(401).json({ message: "Invalid Google token" });
-      }
-      
-      const googleUserId = payload.sub;
-      const email = payload.email;
-      const name = payload.name;
-      const picture = payload.picture;
-      
-      // Create user identifier
-      const userId = `google_${googleUserId}`;
-      
-      // Split name into first and last name
-      let firstName: string | null = null;
-      let lastName: string | null = null;
-      if (name) {
-        const nameParts = name.split(' ');
-        firstName = nameParts[0] || null;
-        lastName = nameParts.slice(1).join(' ') || null;
-      }
-      
-      // Create or update user
-      const user = await storage.upsertUser({
-        id: userId,
-        email: email || null,
-        firstName: firstName,
-        lastName: lastName,
-        profileImageUrl: picture || null
-      });
-      
-      // Create session token
-      const sessionToken = createSessionToken(userId);
-      
-      res.json({
-        token: sessionToken,
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.firstName && user.lastName 
-            ? `${user.firstName} ${user.lastName}` 
-            : user.firstName || null
-        }
-      });
-    } catch (error: any) {
-      console.error("Google auth error:", error);
-      res.status(401).json({ 
-        message: "Invalid Google ID token",
-        error: error.message 
-      });
-    }
-  });
-
-  // ========== EMAIL/PASSWORD AUTH (Development Only) ==========
-  
-  // Simple email/password login for development
-  app.post("/api/auth/login", async (req, res) => {
-    try {
-      const { email, password } = req.body;
-      
-      if (!email || !password) {
-        return res.status(400).json({ message: "Email and password are required" });
-      }
-      
-      // For development: Accept dev@recompute.it with password dev123
-      // In production, this should verify against a password hash
-      if (email === "dev@recompute.it" && password === "dev123") {
-        // Ensure dev user exists
-        const devUserId = "dev-user-123";
-        const user = await storage.upsertUser({
-          id: devUserId,
-          email: "dev@recompute.it",
-          firstName: "Dev",
-          lastName: "User",
-          profileImageUrl: null,
-        });
-        
-        // Create session token
-        const { createSessionToken } = await import('./auth-helpers');
-        const sessionToken = createSessionToken(devUserId);
-        
-        res.json({
-          token: sessionToken,
-          user: {
-            id: user.id,
-            email: user.email,
-            name: user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : "Dev User",
-          },
-        });
-      } else {
-        res.status(401).json({ message: "Invalid email or password" });
-      }
-    } catch (error: any) {
-      console.error("Login error:", error);
-      res.status(500).json({ message: "Failed to login", error: error.message });
-    }
-  });
-  
-  // Simple email/password signup for development
-  app.post("/api/auth/signup", async (req, res) => {
-    try {
-      const { email, password, name } = req.body;
-      
-      if (!email || !password || !name) {
-        return res.status(400).json({ message: "Email, password, and name are required" });
-      }
-      
-      // For development: Create user directly
-      // In production, hash password and validate email
-      const userId = `email_${email.replace(/[@.]/g, "_")}`;
-      
-      // Check if user already exists
-      const existingUser = await storage.getUser(userId);
-      if (existingUser) {
-        return res.status(409).json({ message: "User already exists" });
-      }
-      
-      // Create new user
-      const nameParts = name.split(" ");
-      const firstName = nameParts[0] || null;
-      const lastName = nameParts.slice(1).join(" ") || null;
-      
-      const user = await storage.upsertUser({
-        id: userId,
-        email: email,
-        firstName: firstName,
-        lastName: lastName,
-        profileImageUrl: null,
-      });
-      
-      // Create session token
-      const { createSessionToken } = await import('./auth-helpers');
-      const sessionToken = createSessionToken(userId);
-      
-      res.json({
-        token: sessionToken,
-        user: {
-          id: user.id,
-          email: user.email,
-          name: name,
-        },
-      });
-    } catch (error: any) {
-      console.error("Signup error:", error);
-      res.status(500).json({ message: "Failed to sign up", error: error.message });
-    }
-  });
-
-  // Magic Link Request
-  app.post("/api/auth/magic-link", async (req, res) => {
-    try {
-      const { email } = req.body;
-      const { createMagicLinkToken } = await import("./auth-helpers");
-      
-      const token = await createMagicLinkToken(email);
-      
-      // In a real app, send email here
-      console.log(`[MAGIC LINK] To: ${email}, Token: ${token}`);
-      
-      res.json({ success: true, message: "Magic link sent (check console for dev)" });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to send magic link" });
-    }
-  });
-
-  // Magic Link Verify
-  app.post("/api/auth/magic-link/verify", async (req, res) => {
-    try {
-      const { email, token } = req.body;
-      const { verifyMagicLinkToken, createSessionToken } = await import("./auth-helpers");
-      
-      const isValid = await verifyMagicLinkToken(email, token);
-      if (!isValid) {
-        return res.status(401).json({ message: "Invalid or expired token" });
-      }
-      
-      // Create/Get user
-      // Note: In real app, you'd look up user by email
-      const userId = "magic-" + Buffer.from(email).toString('hex');
-      
-      await storage.upsertUser({
-        id: userId,
-        email: email,
-        firstName: "User",
-        lastName: "",
-        profileImageUrl: null
-      });
-      
-      const sessionToken = createSessionToken(userId);
-      res.json({ token: sessionToken });
-    } catch (error) {
-      res.status(401).json({ message: "Verification failed" });
     }
   });
 
@@ -352,109 +54,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch generation limit" });
-    }
-  });
-
-  // Suggest training goals based on user profile
-  app.post("/api/profile/suggest-goals", async (req: any, res) => {
-    try {
-      const {
-        motivationType,
-        trainingLevel,
-        age,
-        sex,
-        bodyWeight,
-        height,
-        oneRmBench,
-        oneRmOhp,
-        oneRmDeadlift,
-        oneRmSquat,
-        oneRmLatpull,
-      } = req.body;
-
-      const suggestedGoals = calculateSuggestedGoals({
-        motivationType,
-        trainingLevel,
-        age,
-        sex,
-        bodyWeight,
-        height,
-        oneRmValues: {
-          oneRmBench: oneRmBench || null,
-          oneRmOhp: oneRmOhp || null,
-          oneRmDeadlift: oneRmDeadlift || null,
-          oneRmSquat: oneRmSquat || null,
-          oneRmLatpull: oneRmLatpull || null,
-        },
-      });
-
-      res.json(suggestedGoals);
-    } catch (error) {
-      console.error("Error calculating suggested goals:", error);
-      res.status(500).json({ message: "Failed to calculate suggested goals" });
-    }
-  });
-
-  // Suggest 1RM values based on user profile
-  app.post("/api/profile/suggest-onerm", async (req: any, res) => {
-    const requestId = `1RM-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const requestStartTime = Date.now();
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    console.log(`[BACKEND] 📥 REQUEST ${requestId} - /api/profile/suggest-onerm`);
-    console.log(`[BACKEND] ⏰ Start Time: ${new Date(requestStartTime).toISOString()}`);
-    console.log(`[BACKEND ${requestId}] Query: ${JSON.stringify(req.query)}`);
-    console.log(`[BACKEND ${requestId}] Body: ${JSON.stringify(req.body)}`);
-    
-    try {
-      const {
-        motivationType,
-        trainingLevel,
-        age,
-        sex,
-        bodyWeight,
-        height,
-      } = req.body;
-
-      // Always use V3 AI for 1RM estimation (consolidated)
-      console.log("[BACKEND] ✅ Using V3 AI analysis for 1RM estimation");
-      
-      const { analyzeUserProfile, mapOnboardingToV3Profile } = await import("./ai-service-v3");
-      
-      // Map to V3 profile format
-      const v3Profile = mapOnboardingToV3Profile({
-        motivationType,
-        trainingLevel,
-        age,
-        sex,
-        bodyWeight,
-        height,
-      });
-      
-      console.log("[BACKEND] 🤖 Calling analyzeUserProfile (V3)...");
-      const analysisStartTime = Date.now();
-      const analysisResult = await analyzeUserProfile(v3Profile);
-      const analysisDuration = Date.now() - analysisStartTime;
-      console.log(`[BACKEND] ⏱️  Analysis completed in ${analysisDuration}ms`);
-      
-      // Return in the format iOS expects (rounded to integers)
-      const response = {
-        oneRmBench: Math.round(analysisResult.estimated_1rm_kg.bench_press),
-        oneRmOhp: Math.round(analysisResult.estimated_1rm_kg.overhead_press),
-        oneRmDeadlift: Math.round(analysisResult.estimated_1rm_kg.deadlift),
-        oneRmSquat: Math.round(analysisResult.estimated_1rm_kg.squat),
-        oneRmLatpull: Math.round(analysisResult.estimated_1rm_kg.lat_pulldown),
-      };
-      
-      const duration = Date.now() - requestStartTime;
-      console.log(`[BACKEND] /api/profile/suggest-onerm completed in ${duration}ms`);
-      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      
-      res.json(response);
-    } catch (error) {
-      const duration = Date.now() - requestStartTime;
-      console.error(`[BACKEND] Error in /api/profile/suggest-onerm after ${duration}ms:`, error);
-      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      res.status(500).json({ message: "Failed to calculate suggested 1RM" });
     }
   });
 
@@ -531,46 +130,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Regenerate program if training settings changed
       if (trainingSettingsChanged) {
         try {
-          // Get profile data for V3 generation
-          const profileData = await storage.getUserProfile(userId);
-          const equipment = await storage.getUserEquipment(userId);
-          const equipmentList = equipment.map(eq => eq.equipmentName);
           
-          // Generate program using V3 architecture
-          const v3Result = await generateV3Program({
-            userId,
-            profile: {
-              age: profileData?.age || undefined,
-              sex: profileData?.sex || undefined,
-              bodyWeight: profileData?.bodyWeight || undefined,
-              height: profileData?.height || undefined,
-              trainingLevel: profileData?.trainingLevel || undefined,
-              motivationType: profileData?.motivationType || undefined,
-              trainingGoals: profileData?.trainingGoals || undefined,
-              specificSport: profileData?.specificSport || undefined,
-              oneRmBench: profileData?.oneRmBench,
-              oneRmOhp: profileData?.oneRmOhp,
-              oneRmDeadlift: profileData?.oneRmDeadlift,
-              oneRmSquat: profileData?.oneRmSquat,
-              oneRmLatpull: profileData?.oneRmLatpull,
-              goalStrength: profileData?.goalStrength || undefined,
-              goalVolume: profileData?.goalVolume || undefined,
-              goalEndurance: profileData?.goalEndurance || undefined,
-              goalCardio: profileData?.goalCardio || undefined,
-            },
-            sessionsPerWeek: profileData?.sessionsPerWeek || 3,
-            sessionDuration: profileData?.sessionDuration || 60,
-            equipmentList,
-            gymId: profileData?.selectedGymId || undefined,
-          });
-          
-          await storage.clearUserProgramTemplates(userId);
-          await storage.createProgramTemplatesFromDeepSeek(userId, v3Result.deepSeekFormat);
-          await storage.incrementProgramGeneration(userId);
-          // Reset pass counter to 1 for new program cycle
-          await storage.updateUserProfile(userId, { currentPassNumber: 1 });
-          
-          const generationStatus = await workoutGenerationService.canGenerateProgram(userId);
+          const workoutData = await workoutGenerationService.getUserWorkoutData(userId);
+          if (workoutData) {
+            const systemPrompt = workoutGenerationService.getSystemPrompt();
+            const userPrompt = workoutGenerationService.buildUserPrompt(workoutData);
+            
+            // Get extended profile data for V2 generation
+            const extendedProfile = await workoutGenerationService.getExtendedProfileData(userId);
+            
+            const program = await generateWorkoutProgramWithVersionSwitch(
+              systemPrompt, 
+              userPrompt, 
+              workoutData.session_length_minutes,
+              extendedProfile || undefined
+            );
+            await storage.clearUserProgramTemplates(userId);
+            await storage.createProgramTemplatesFromDeepSeek(userId, program);
+            await storage.incrementProgramGeneration(userId);
+            // Reset pass counter to 1 for new program cycle
+            await storage.updateUserProfile(userId, { currentPassNumber: 1 });
+            
+            const generationStatus = await workoutGenerationService.canGenerateProgram(userId);
+          }
         } catch (programError) {
           
           // Rollback profile to old values since AI generation failed
@@ -607,58 +189,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Reset profile to default values (for debug "Återställ onboarding" functionality)
-  app.post("/api/profile/reset", isAuthenticatedOrDev, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      
-      // Reset profile values to defaults
-      const resetData = {
-        // Personal info - set to null
-        age: null,
-        sex: null,
-        bodyWeight: null,
-        height: null,
-        bodyFatPercent: null,
-        muscleMassPercent: null,
-        
-        // 1RM values - set to null
-        oneRmBench: null,
-        oneRmOhp: null,
-        oneRmDeadlift: null,
-        oneRmSquat: null,
-        oneRmLatpull: null,
-        
-        // Goals - reset to defaults (25% each)
-        goalStrength: 25,
-        goalVolume: 25,
-        goalEndurance: 25,
-        goalCardio: 25,
-        
-        // Training settings - reset to defaults
-        motivationType: null,
-        trainingLevel: null,
-        specificSport: null,
-        sessionsPerWeek: 3,
-        sessionDuration: 60,
-        
-        // Program tracking
-        currentPassNumber: 1,
-        lastCompletedTemplateId: null,
-        selectedGymId: null,
-        onboardingCompleted: false,
-      };
-      
-      await storage.updateUserProfile(userId, resetData as any);
-      
-      console.log(`[PROFILE RESET] ✅ Reset profile for user ${userId}`);
-      res.json({ success: true, message: "Profile reset to defaults" });
-    } catch (error) {
-      console.error("[PROFILE RESET] ❌ Error:", error);
-      res.status(500).json({ message: "Failed to reset profile" });
-    }
-  });
-
   app.post("/api/upload-avatar", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
@@ -691,25 +221,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Onboarding endpoint with auth middleware
   app.post("/api/onboarding/complete", isAuthenticatedOrDev, async (req: any, res) => {
-    // Early logging to catch requests immediately
-    console.log("[ONBOARDING] 📥 REQUEST RECEIVED - /api/onboarding/complete");
-    console.log("[ONBOARDING] ⏰ Time:", new Date().toISOString());
-    console.log("[ONBOARDING] 📋 Method:", req.method);
-    console.log("[ONBOARDING] 🌐 URL:", req.url);
-    console.log("[ONBOARDING] 📦 Body keys:", Object.keys(req.body || {}));
-    console.log("[ONBOARDING] 🔍 Query params:", req.query);
-    
     try {
-      // Use a default dev user ID if no authentication
-      let userId = "dev-user-123";
-      if (req.user?.claims?.sub) {
-        userId = req.user.claims.sub;
-      } else {
-        // Ensure dev user exists
-        userId = await ensureDevUserExists();
-      }
+      const userId = req.user.claims.sub;
       const { profile, equipment } = req.body;
 
       if (!profile?.motivationType || !profile?.trainingLevel || !profile?.sessionsPerWeek || !profile?.sessionDuration) {
@@ -727,7 +241,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const preliminaryProfile = insertUserProfileSchema.parse({
         ...profile,
-        userId, // Now correctly set from ensureDevUserExists()
+        userId,
         goalStrength,
         goalVolume,
         goalEndurance,
@@ -767,177 +281,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
         selectedGymId: firstGym?.id || null,
       });
 
-      // Generate workout program automatically after onboarding (V3 only)
-      const onboardingRequestId = `ONBOARDING-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      const onboardingStartTime = Date.now();
-      
-      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      console.log(`[ONBOARDING] 📥 REQUEST ${onboardingRequestId} - /api/onboarding/complete`);
-      console.log(`[ONBOARDING] ⏰ Start Time: ${new Date(onboardingStartTime).toISOString()}`);
-      console.log(`[ONBOARDING ${onboardingRequestId}] 🚀 Using V3 AI architecture (consolidated)`);
-      
-      let programResponse: any = null;
+      // Generate workout program automatically after onboarding
       try {
-        console.log(`[ONBOARDING ${onboardingRequestId}] ✅ Starting V3 program generation...`);
+        
+        const workoutData = await workoutGenerationService.getUserWorkoutData(userId);
+        if (workoutData) {
+          const systemPrompt = workoutGenerationService.getSystemPrompt();
+          const userPrompt = workoutGenerationService.buildUserPrompt(workoutData);
           
-          // Step 1: Analyze user profile
-          const step1StartTime = Date.now();
-          console.log(`[ONBOARDING ${onboardingRequestId}] 📦 Importing ai-service-v3...`);
-          const { analyzeUserProfile, createWorkoutProgram, mapOnboardingToV3Profile } = await import("./ai-service-v3");
-          console.log(`[ONBOARDING ${onboardingRequestId}] ⏱️  Import completed in ${Date.now() - step1StartTime}ms`);
+          // Get extended profile data for V2 generation
+          const extendedProfile = await workoutGenerationService.getExtendedProfileData(userId);
           
-          const v3Profile = mapOnboardingToV3Profile(profile);
-          console.log(`[ONBOARDING ${onboardingRequestId}] 🔄 Step 1: Analyzing user profile...`);
-          console.log(`[ONBOARDING ${onboardingRequestId}] 📋 V3 Profile:`, JSON.stringify(v3Profile, null, 2));
-          
-          const analysisStartTime = Date.now();
-          const analysisResult = await analyzeUserProfile(v3Profile);
-          const analysisDuration = Date.now() - analysisStartTime;
-          console.log(`[ONBOARDING ${onboardingRequestId}] ✅ Step 1: Analysis complete in ${analysisDuration}ms`);
-          console.log(`[ONBOARDING ${onboardingRequestId}] 📊 Analysis Result:`, {
-            focusDistribution: analysisResult.focus_distribution,
-            estimated1RM: analysisResult.estimated_1rm_kg,
-          });
-          
-          // Use estimated 1RM if user didn't provide their own, or use confirmed if provided
-          const confirmed1Rm = v3Profile.confirmed1Rm || {
-            bench_press: analysisResult.estimated_1rm_kg.bench_press,
-            overhead_press: analysisResult.estimated_1rm_kg.overhead_press,
-            deadlift: analysisResult.estimated_1rm_kg.deadlift,
-            squat: analysisResult.estimated_1rm_kg.squat,
-            lat_pulldown: analysisResult.estimated_1rm_kg.lat_pulldown,
-          };
-          
-          // Use focus distribution from analysis if not provided
-          const focusDistribution = v3Profile.focusDistribution || analysisResult.focus_distribution;
-          
-          // Step 2: Create program
-          const step2StartTime = Date.now();
-          console.log(`[ONBOARDING ${onboardingRequestId}] 🔄 Step 2: Creating workout program...`);
-          
-          const equipmentList = equipment && equipment.length > 0 
-            ? equipment.join(", ")
-            : "Bodyweight only";
-          
-          // Get filtered exercises based on user's equipment
-          const { filterExercisesByUserEquipment } = await import("./exercise-matcher");
-          const filteredExercises = await filterExercisesByUserEquipment(userId, finalProfile.selectedGymId || undefined);
-          const filteredExerciseNames = filteredExercises.map(ex => ex.nameEn);
-          
-          console.log(`[ONBOARDING ${onboardingRequestId}] 📋 Program Context:`, {
-            sessionsPerWeek,
-            sessionDurationMinutes: sessionDuration,
-            equipmentCount: equipment?.length || 0,
-            equipmentList: equipmentList.substring(0, 100) + (equipmentList.length > 100 ? "..." : ""),
-            filteredExerciseCount: filteredExerciseNames.length,
-            filteredExercisesSample: filteredExerciseNames.slice(0, 10),
-          });
-          
-          const programResult = await createWorkoutProgram(
-            {
-              ...v3Profile,
-              confirmed1Rm,
-              focusDistribution,
-            },
-            {
-              sessionsPerWeek,
-              sessionDurationMinutes: sessionDuration,
-              equipmentList,
-              filteredExerciseNames, // Pass filtered exercise names to AI
-            }
+          const program = await generateWorkoutProgramWithVersionSwitch(
+            systemPrompt, 
+            userPrompt, 
+            workoutData.session_length_minutes,
+            extendedProfile || undefined
           );
           
-          const step2Duration = Date.now() - step2StartTime;
-          console.log(`[ONBOARDING ${onboardingRequestId}] ✅ Step 2: Program created in ${step2Duration}ms with ${programResult.schedule.length} days`);
+          // Clear any existing templates AFTER successful generation (prevents data loss if AI fails)
+          await storage.clearUserProgramTemplates(userId);
           
-          // Convert V3 program format to DeepSeek format for storage
-          const convertedProgram = {
-            program_name: programResult.program_name,
-            program_overview: {
-              total_sessions: programResult.schedule.length,
-              sport_specific_note: programResult.sport_specific_note,
-            },
-            weekly_sessions: programResult.schedule.map((day, idx) => ({
-              session_number: idx + 1,
-              weekday: day.day_name,
-              session_name: day.day_name,
-              session_type: "strength", // Default, could be determined from exercises
-              estimated_duration_minutes: sessionDuration,
-              warmup: [],
-              main_work: day.exercises.map((ex, exIdx) => ({
-                exercise_name: ex.name,
-                sets: ex.sets,
-                reps: ex.reps,
-                rest_seconds: ex.rest_seconds,
-                tempo: "",
-                suggested_weight_kg: ex.calculated_weight,
-                suggested_weight_notes: ex.load_guidance,
-                target_muscles: [],
-                required_equipment: [],
-                technique_cues: ex.note ? [ex.note] : [],
-              })),
-              cooldown: [],
-            })),
-          };
-          
-          // Save program using DeepSeek function which validates exercises against equipment
-          // Note: clearUserProgramTemplates is called inside createProgramTemplatesFromDeepSeek
-          await storage.createProgramTemplatesFromDeepSeek(userId, convertedProgram as any);
+          await storage.createProgramTemplatesFromDeepSeek(userId, program);
+          // Reset pass counter to 1 for new program cycle
           await storage.updateUserProfile(userId, { currentPassNumber: 1 });
           
-          programResponse = {
-            cached: false,
-            v3: true,
-            analysis: analysisResult,
-            program: programResult,
-          };
-          
-          const totalDuration = Date.now() - onboardingStartTime;
-          console.log(`[ONBOARDING ${onboardingRequestId}] ✅ Program saved successfully`);
-          console.log(`[ONBOARDING ${onboardingRequestId}] ⏱️  Total V3 onboarding time: ${totalDuration}ms`);
-          console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        }
       } catch (programError) {
         // Log error but don't fail onboarding if program generation fails
-        const errorDuration = Date.now() - onboardingStartTime;
-        console.error(`[ONBOARDING ${onboardingRequestId}] ❌ Failed to generate workout program after ${errorDuration}ms:`);
-        console.error(`[ONBOARDING ${onboardingRequestId}] Error:`, programError);
-        if (programError instanceof Error) {
-          console.error(`[ONBOARDING ${onboardingRequestId}] Error message:`, programError.message);
-          console.error(`[ONBOARDING ${onboardingRequestId}] Error stack:`, programError.stack);
-        }
-        console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        // Continue with onboarding even if program generation fails
-        // User can generate program later manually
       }
-      
-      const totalOnboardingDuration = Date.now() - onboardingStartTime;
-      console.log(`[ONBOARDING ${onboardingRequestId}] ✅ Onboarding completed in ${totalOnboardingDuration}ms`);
 
-      // Build response - only include program if it exists
-      const response: any = {
-        success: true,
-        profile: finalProfile,
-        gym: firstGym || null,
-      };
-      
-      if (programResponse) {
-        response.program = programResponse;
-      }
-      
-      res.json(response);
+      res.json({ success: true, profile: finalProfile, gym: firstGym });
     } catch (error) {
-      console.error("[ONBOARDING] Error completing onboarding:", error);
       if (error instanceof ZodError) {
-        console.error("[ONBOARDING] Validation errors:", JSON.stringify(error.errors, null, 2));
-        return res.status(400).json({ 
-          message: "Validation error", 
-          errors: error.errors,
-          details: error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
-        });
+        return res.status(400).json({ message: "Validation error", errors: error.errors });
       }
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      console.error("[ONBOARDING] Error message:", errorMessage);
-      res.status(500).json({ message: "Failed to complete onboarding", error: errorMessage });
+      res.status(500).json({ message: "Failed to complete onboarding" });
     }
   });
 
@@ -1164,182 +543,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Delete all program templates for user
-  app.delete("/api/program/templates", isAuthenticatedOrDev, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      console.log(`[API] Deleting all program templates for user: ${userId}`);
-      
-      await storage.clearUserProgramTemplates(userId);
-      
-      console.log(`[API] ✅ Successfully deleted all program templates for user: ${userId}`);
-      res.json({ success: true, message: "All program templates deleted" });
-    } catch (error: any) {
-      console.error("[API] ❌ Error deleting templates:", error);
-      res.status(500).json({ message: error.message || "Failed to delete templates" });
-    }
-  });
-
-  // Get current program generation status
-  app.get("/api/program/status", isAuthenticatedOrDev, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const profile = await storage.getUserProfile(userId);
-      const isGenerating = profile?.isGeneratingProgram || false;
-      const templates = await storage.getUserProgramTemplates(userId);
-      const hasTemplates = templates && templates.length > 0;
-      
-      let status = "no_program";
-      if (isGenerating) {
-        status = "generating";
-      } else if (hasTemplates) {
-        status = "ready"; // Using "ready" which iOS looks for
-      }
-      
-      res.json({
-        status,
-        message: status === "ready" 
-          ? `Program ready with ${templates.length} templates` 
-          : status === "generating"
-            ? "AI is still generating your program. This may take up to 60 seconds."
-            : "No program templates found. Please complete onboarding or generate a program.",
-        hasTemplates,
-        templatesCount: templates?.length || 0,
-        progress: isGenerating ? 45 : (hasTemplates ? 100 : 0),
-        jobId: null,
-        error: null,
-      });
-    } catch (error) {
-      console.error("Error getting program status:", error);
-      res.status(500).json({ 
-        status: "error",
-        message: "Failed to get program status",
-        hasTemplates: false,
-        templatesCount: 0,
-        progress: null,
-        jobId: null,
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
-
-  // Get generation job status (simplified - returns basic status)
-  app.get("/api/program/generate/status/:jobId", isAuthenticatedOrDev, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const { jobId } = req.params;
-
-      // For now, return a basic status since job system may not be fully implemented
-      // In a full implementation, this would check the job status from a job queue
-      const templates = await storage.getUserProgramTemplates(userId);
-      const hasTemplates = templates && templates.length > 0;
-      
-      res.json({
-        status: hasTemplates ? "completed" : "generating",
-        progress: hasTemplates ? 100 : 50,
-        program: hasTemplates ? templates : null,
-        error: null,
-      });
-    } catch (error: any) {
-      console.error("Error getting job status:", error);
-      res.status(500).json({ 
-        status: "failed",
-        progress: 0,
-        program: null,
-        error: error.message || "Failed to get job status"
-      });
-    }
-  });
-
-  // ========== LOCAL GENERATION ROUTES ==========
-  
-  // Generate program locally from cached patterns (no AI call)
-  app.post("/api/program/generate-local", isAuthenticatedOrDev, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const profile = await storage.getUserProfile(userId);
-      
-      if (!profile) {
-        return res.status(404).json({ 
-          success: false,
-          message: "User profile not found" 
-        });
-      }
-      
-      // Get user's equipment
-      const userEquipment = await storage.getUserEquipment(userId);
-      const equipmentNames = userEquipment.map((eq: any) => eq.equipmentName.toLowerCase());
-      
-      const { generateLocalProgram } = await import("./local-generator");
-      
-      const result = await generateLocalProgram({
-        trainingGoal: profile.motivationType || profile.trainingGoals || 'general',
-        trainingLevel: profile.trainingLevel || 'intermediate',
-        daysPerWeek: profile.sessionsPerWeek || 3,
-        sessionDuration: profile.sessionDuration || 60,
-        equipment: equipmentNames,
-        goalStrength: profile.goalStrength ?? 50,
-        goalVolume: profile.goalVolume ?? 50,
-        goalEndurance: profile.goalEndurance ?? 50,
-        goalCardio: profile.goalCardio ?? 50,
-      });
-      
-      if (result.success && result.program) {
-        res.json({
-          success: true,
-          source: result.source,
-          matchScore: result.matchScore,
-          patternId: result.patternId,
-          program: result.program,
-          message: result.message,
-        });
-      } else {
-        res.json({
-          success: false,
-          source: result.source,
-          message: result.message || "Local generation not possible, AI fallback required",
-        });
-      }
-    } catch (error: any) {
-      console.error("Error in local generation:", error);
-      res.status(500).json({ 
-        success: false,
-        message: error.message || "Local generation failed"
-      });
-    }
-  });
-  
-  // Get local generation statistics
-  app.get("/api/program/local-stats", isAuthenticatedOrDev, async (req: any, res) => {
-    try {
-      const { getLocalGenerationStats } = await import("./local-generator");
-      const { getPatternStats } = await import("./pattern-collector");
-      
-      const localStats = await getLocalGenerationStats();
-      const patternStats = await getPatternStats();
-      
-      res.json({
-        canGenerateLocally: localStats.canGenerateLocally,
-        patterns: {
-          total: patternStats.totalPatterns,
-          topPatterns: patternStats.topPatterns,
-        },
-        rules: {
-          total: patternStats.totalSelectionRules,
-        },
-        substitutions: {
-          total: patternStats.totalSubstitutions,
-        },
-        topGoals: localStats.topGoals,
-      });
-    } catch (error: any) {
-      console.error("Error getting local stats:", error);
-      res.status(500).json({ 
-        message: error.message || "Failed to get local generation stats"
-      });
-    }
-  });
-
   app.get("/api/program/next", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
@@ -1536,43 +739,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const equipment = await storage.getUserEquipment(userId);
-      const equipmentList = equipment.map(eq => eq.equipmentName);
       
-      // Use V3 generator
-      const v3Result = await generateV3Program({
-        userId,
-        profile: {
-          age: profile.age || undefined,
-          sex: profile.sex || undefined,
-          bodyWeight: profile.bodyWeight || undefined,
-          height: profile.height || undefined,
-          trainingLevel: profile.trainingLevel || undefined,
-          motivationType: profile.motivationType || undefined,
-          trainingGoals: profile.trainingGoals || undefined,
-          specificSport: profile.specificSport || undefined,
-          oneRmBench: profile.oneRmBench,
-          oneRmOhp: profile.oneRmOhp,
-          oneRmDeadlift: profile.oneRmDeadlift,
-          oneRmSquat: profile.oneRmSquat,
-          oneRmLatpull: profile.oneRmLatpull,
-          goalStrength: profile.goalStrength || undefined,
-          goalVolume: profile.goalVolume || undefined,
-          goalEndurance: profile.goalEndurance || undefined,
-          goalCardio: profile.goalCardio || undefined,
-        },
-        sessionsPerWeek: profile.sessionsPerWeek || 3,
-        sessionDuration: profile.sessionDuration || 60,
-        equipmentList,
-        gymId: profile.selectedGymId || undefined,
-      });
-
-      // Update profile with AI program flag
-      await storage.updateUserProfile(userId, {
+      const program = await generateWorkoutProgram(profile, equipment);
+      
+      const profileUpdate = insertUserProfileSchema.parse({
+        userId: profile.userId,
+        age: profile.age,
+        sex: profile.sex,
+        bodyWeight: profile.bodyWeight,
+        height: profile.height,
+        bodyFatPercent: profile.bodyFatPercent,
+        muscleMassPercent: profile.muscleMassPercent,
+        oneRmBench: profile.oneRmBench,
+        oneRmOhp: profile.oneRmOhp,
+        oneRmDeadlift: profile.oneRmDeadlift,
+        oneRmSquat: profile.oneRmSquat,
+        oneRmLatpull: profile.oneRmLatpull,
+        trainingGoals: profile.trainingGoals,
+        goalStrength: profile.goalStrength,
+        goalVolume: profile.goalVolume,
+        goalEndurance: profile.goalEndurance,
+        goalCardio: profile.goalCardio,
+        sessionsPerWeek: profile.sessionsPerWeek,
+        sessionDuration: profile.sessionDuration,
+        restTime: profile.restTime,
+        onboardingCompleted: profile.onboardingCompleted,
+        appleHealthConnected: profile.appleHealthConnected,
+        equipmentRegistered: profile.equipmentRegistered,
         hasAiProgram: true,
-        aiProgramData: v3Result.deepSeekFormat,
+        aiProgramData: program,
+        lastSessionType: profile.lastSessionType,
       });
+      
+      const updatedProfile = await storage.upsertUserProfile(profileUpdate);
 
-      res.json({ success: true, program: v3Result.deepSeekFormat, analysis: v3Result.analysisResult });
+      res.json({ success: true, program, profile: updatedProfile });
     } catch (error) {
       res.status(500).json({ 
         message: "Failed to generate workout program",
@@ -1581,7 +782,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // New V3 workout generation
+  // New DeepSeek Reasoner workout generation
   app.post("/api/programs/generate", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
@@ -1601,73 +802,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      // Get profile and equipment for V3 generation
-      const profile = await storage.getUserProfile(userId);
-      if (!profile) {
-        return res.status(400).json({ message: "Användarprofil saknas" });
+      // Get user workout data
+      const workoutData = await workoutGenerationService.getUserWorkoutData(userId);
+      if (!workoutData) {
+        return res.status(400).json({ message: "Användarprofil saknas eller ofullständig" });
       }
       
-      const equipment = await storage.getUserEquipment(userId);
-      const equipmentList = equipment.map(eq => eq.equipmentName);
+      // Build prompts
+      const systemPrompt = workoutGenerationService.getSystemPrompt();
+      const userPrompt = workoutGenerationService.buildUserPrompt(workoutData);
       
-      // Generate program using V3 architecture
-      const v3Result = await generateV3Program({
-        userId,
-        profile: {
-          age: profile.age || undefined,
-          sex: profile.sex || undefined,
-          bodyWeight: profile.bodyWeight || undefined,
-          height: profile.height || undefined,
-          trainingLevel: profile.trainingLevel || undefined,
-          motivationType: profile.motivationType || undefined,
-          trainingGoals: profile.trainingGoals || undefined,
-          specificSport: profile.specificSport || undefined,
-          oneRmBench: profile.oneRmBench,
-          oneRmOhp: profile.oneRmOhp,
-          oneRmDeadlift: profile.oneRmDeadlift,
-          oneRmSquat: profile.oneRmSquat,
-          oneRmLatpull: profile.oneRmLatpull,
-          goalStrength: profile.goalStrength || undefined,
-          goalVolume: profile.goalVolume || undefined,
-          goalEndurance: profile.goalEndurance || undefined,
-          goalCardio: profile.goalCardio || undefined,
-        },
-        sessionsPerWeek: profile.sessionsPerWeek || 3,
-        sessionDuration: profile.sessionDuration || 60,
-        equipmentList,
-        gymId: profile.selectedGymId || undefined,
-      });
+      
+      // Get extended profile data for V2 generation
+      const extendedProfile = await workoutGenerationService.getExtendedProfileData(userId);
+      
+      // Call AI API with duration validation using version switcher
+      const program = await generateWorkoutProgramWithVersionSwitch(
+        systemPrompt, 
+        userPrompt, 
+        workoutData.session_length_minutes,
+        extendedProfile || undefined
+      );
+      
       
       // Clear existing templates
       await storage.clearUserProgramTemplates(userId);
       
       // Save new templates to database
-      await storage.createProgramTemplatesFromDeepSeek(userId, v3Result.deepSeekFormat);
+      await storage.createProgramTemplatesFromDeepSeek(userId, program);
       
       // Reset pass counter to 1 for new program cycle
       await storage.updateUserProfile(userId, { currentPassNumber: 1 });
       
       // Also save program to gym_programs for selected gym
-      if (profile.selectedGymId) {
+      const profile = await storage.getUserProfile(userId);
+      if (profile?.selectedGymId) {
         await storage.upsertGymProgram({
           userId,
           gymId: profile.selectedGymId,
-          programData: v3Result.deepSeekFormat,
+          programData: program,
         });
       }
       
-      // Increment generation count
-      await storage.incrementProgramGeneration(userId);
-      
       // Get created templates for response
       const templates = await storage.getUserProgramTemplates(userId);
+      
       
       res.json({ 
         success: true, 
         message: "Träningsprogram genererat",
         templatesCreated: templates.length,
-        programOverview: v3Result.deepSeekFormat.program_overview,
-        analysis: v3Result.analysisResult,
+        programOverview: program.program_overview,
       });
     } catch (error) {
       if (error instanceof ZodError) {
@@ -2802,546 +1987,6 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-
-
-  /**
-   * Resolve an unmapped exercise
-   * action: "alias" | "new" | "reject"
-   */
-  app.patch("/api/admin/unmapped-exercises/:id/resolve", isAuthenticatedOrDev, async (req: any, res) => {
-    const { id } = req.params;
-    const { action, exerciseId, newName, note } = req.body || {};
-
-    if (!action || !["alias", "new", "reject"].includes(action)) {
-      return res.status(400).json({ message: "Invalid action. Use alias | new | reject" });
-    }
-
-    try {
-      const entry = await db
-        .select()
-        .from(unmappedExercises)
-        .where(eq(unmappedExercises.id, id))
-        .limit(1);
-
-      if (entry.length === 0) {
-        return res.status(404).json({ message: "Unmapped exercise not found" });
-      }
-
-      const aiName = entry[0].aiName;
-
-      if (action === "alias") {
-        if (!exerciseId) {
-          return res.status(400).json({ message: "exerciseId is required for alias action" });
-        }
-
-        const existingAlias = await db
-          .select()
-          .from(exerciseAliases)
-          .where(
-            sql`${exerciseAliases.aliasName} = ${aiName} AND ${exerciseAliases.exerciseId} = ${exerciseId}`
-          )
-          .limit(1);
-
-        if (existingAlias.length === 0) {
-          await db.insert(exerciseAliases).values({
-            aliasName: aiName,
-            exerciseId,
-            createdBy: req.user?.claims?.sub,
-          });
-        }
-
-        await db.delete(unmappedExercises).where(eq(unmappedExercises.id, id));
-        return res.json({ resolvedAs: "alias", aiName, exerciseId });
-      }
-
-      if (action === "new") {
-        if (!newName) {
-          return res.status(400).json({ message: "newName is required for new action" });
-        }
-
-        const [created] = await db
-          .insert(exercises)
-          .values({
-            name: newName,
-            nameEn: newName,
-            category: "strength",
-            difficulty: "intermediate",
-            primaryMuscles: ["unknown"],
-            secondaryMuscles: [],
-            requiredEquipment: ["unknown"],
-            isCompound: false,
-            youtubeUrl: null,
-            videoType: null,
-          })
-          .returning();
-
-        await db.insert(exerciseAliases).values({
-          aliasName: aiName,
-          exerciseId: created.id,
-          createdBy: req.user?.claims?.sub,
-        });
-
-        await db.delete(unmappedExercises).where(eq(unmappedExercises.id, id));
-        return res.json({ resolvedAs: "new", aiName, exerciseId: created.id });
-      }
-
-      if (action === "reject") {
-        await db.delete(unmappedExercises).where(eq(unmappedExercises.id, id));
-        return res.json({ resolvedAs: "rejected", aiName, note: note || null });
-      }
-
-      return res.status(400).json({ message: "Unhandled action" });
-    } catch (error) {
-      console.error("[ADMIN] Failed to resolve unmapped exercise:", error);
-      return res.status(500).json({ message: "Failed to resolve unmapped exercise" });
-    }
-  });
-
-  // Unmapped equipment inbox
-  app.get("/api/admin/unmapped-equipment", isAuthenticatedOrDev, async (_req: any, res) => {
-    try {
-      const entries = await db.select().from(unmappedEquipment).orderBy(sql`${unmappedEquipment.count} DESC`);
-      res.json(entries);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch unmapped equipment" });
-    }
-  });
-
-  /**
-   * Resolve an unmapped equipment
-   * action: "alias" | "new" | "reject"
-   */
-  app.patch("/api/admin/unmapped-equipment/:id/resolve", isAuthenticatedOrDev, async (req: any, res) => {
-    const { id } = req.params;
-    const { action, equipmentId, newName, note } = req.body || {};
-
-    if (!action || !["alias", "new", "reject"].includes(action)) {
-      return res.status(400).json({ message: "Invalid action. Use alias | new | reject" });
-    }
-
-    try {
-      const entry = await db
-        .select()
-        .from(unmappedEquipment)
-        .where(eq(unmappedEquipment.id, id))
-        .limit(1);
-
-      if (entry.length === 0) {
-        return res.status(404).json({ message: "Unmapped equipment not found" });
-      }
-
-      const aiName = entry[0].aiName;
-
-      if (action === "alias") {
-        if (!equipmentId) {
-          return res.status(400).json({ message: "equipmentId is required for alias action" });
-        }
-
-        const existingAlias = await db
-          .select()
-          .from(equipmentAliases)
-          .where(
-            sql`${equipmentAliases.aliasName} = ${aiName} AND ${equipmentAliases.equipmentId} = ${equipmentId}`
-          )
-          .limit(1);
-
-        if (existingAlias.length === 0) {
-          await db.insert(equipmentAliases).values({
-            aliasName: aiName,
-            equipmentId,
-            createdBy: req.user?.claims?.sub,
-          });
-        }
-
-        await db.delete(unmappedEquipment).where(eq(unmappedEquipment.id, id));
-        return res.json({ resolvedAs: "alias", aiName, equipmentId });
-      }
-
-      if (action === "new") {
-        if (!newName) {
-          return res.status(400).json({ message: "newName is required for new action" });
-        }
-
-        const [created] = await db
-          .insert(equipmentCatalog)
-          .values({
-            name: newName,
-            nameEn: newName,
-            category: "Other",
-            type: "Other",
-            description: null,
-          })
-          .returning();
-
-        await db.insert(equipmentAliases).values({
-          aliasName: aiName,
-          equipmentId: created.id,
-          createdBy: req.user?.claims?.sub,
-        });
-
-        await db.delete(unmappedEquipment).where(eq(unmappedEquipment.id, id));
-        return res.json({ resolvedAs: "new", aiName, equipmentId: created.id });
-      }
-
-      if (action === "reject") {
-        await db.delete(unmappedEquipment).where(eq(unmappedEquipment.id, id));
-        return res.json({ resolvedAs: "rejected", aiName, note: note || null });
-      }
-
-      return res.status(400).json({ message: "Unhandled action" });
-    } catch (error) {
-      console.error("[ADMIN] Failed to resolve unmapped equipment:", error);
-      return res.status(500).json({ message: "Failed to resolve unmapped equipment" });
-    }
-  });
-
-  // Log unmapped equipment from clients
-  app.post("/api/equipment/unmapped", isAuthenticatedOrDev, async (req: any, res) => {
-    const { aiName, suggestedMatch } = req.body || {};
-    if (!aiName) {
-      return res.status(400).json({ message: "aiName is required" });
-    }
-
-    try {
-      const existing = await db
-        .select()
-        .from(unmappedEquipment)
-        .where(eq(unmappedEquipment.aiName, aiName))
-        .limit(1);
-
-      if (existing.length > 0) {
-        await db
-          .update(unmappedEquipment)
-          .set({
-            count: sql`${unmappedEquipment.count} + 1`,
-            lastSeen: new Date(),
-            suggestedMatch: suggestedMatch || existing[0].suggestedMatch,
-          })
-          .where(eq(unmappedEquipment.aiName, aiName));
-      } else {
-        await db.insert(unmappedEquipment).values({
-          aiName,
-          suggestedMatch: suggestedMatch || null,
-          count: 1,
-          firstSeen: new Date(),
-          lastSeen: new Date(),
-        });
-      }
-
-      res.json({ ok: true });
-    } catch (error) {
-      console.error("[API] Failed to log unmapped equipment:", error);
-      res.status(500).json({ message: "Failed to log unmapped equipment" });
-    }
-  });
-
-  // ========== PENDING ITEMS ENDPOINTS (iOS AdminView compatible) ==========
-  // These map to unmapped_exercises and unmapped_equipment tables
-  // with response format matching iOS PendingExercise/PendingEquipment structs
-
-  // GET all pending exercises for admin review
-  app.get("/api/admin/pending/exercises", isAuthenticatedOrDev, async (_req: any, res) => {
-    try {
-      const entries = await db
-        .select()
-        .from(unmappedExercises)
-        .orderBy(sql`${unmappedExercises.count} DESC`);
-      
-      // Transform to iOS PendingExercise format
-      const pendingExercises = entries.map(entry => ({
-        id: entry.id,
-        name: entry.aiName,
-        nameEn: entry.suggestedMatch || null,
-        description: null,
-        category: null,
-        difficulty: null,
-        primaryMuscles: null,
-        secondaryMuscles: null,
-        requiredEquipment: null,
-        movementPattern: null,
-        isCompound: null,
-        youtubeUrl: null,
-        videoType: null,
-        instructions: null,
-        createdBy: "system",
-        aiGeneratedName: entry.aiName,
-        status: "pending",
-        reviewedBy: entry.matchedExerciseId ? "admin" : null,
-        reviewedAt: null,
-        rejectionReason: null,
-        createdAt: entry.firstSeen?.toISOString() || new Date().toISOString(),
-        // Extra info for admin
-        count: entry.count,
-        lastSeen: entry.lastSeen?.toISOString() || null,
-      }));
-      
-      res.json(pendingExercises);
-    } catch (error) {
-      console.error("[ADMIN] Failed to fetch pending exercises:", error);
-      res.status(500).json({ message: "Failed to fetch pending exercises" });
-    }
-  });
-
-  // GET all pending equipment for admin review
-  app.get("/api/admin/pending/equipment", isAuthenticatedOrDev, async (_req: any, res) => {
-    try {
-      const entries = await db
-        .select()
-        .from(unmappedEquipment)
-        .orderBy(sql`${unmappedEquipment.count} DESC`);
-      
-      // Transform to iOS PendingEquipment format
-      const pendingEquipment = entries.map(entry => ({
-        id: entry.id,
-        name: entry.aiName,
-        nameEn: entry.suggestedMatch || null,
-        category: null,
-        type: null,
-        description: null,
-        createdBy: "system",
-        aiGeneratedName: entry.aiName,
-        status: "pending",
-        reviewedBy: entry.matchedEquipmentId ? "admin" : null,
-        reviewedAt: null,
-        rejectionReason: null,
-        createdAt: entry.firstSeen?.toISOString() || new Date().toISOString(),
-        // Extra info for admin
-        count: entry.count,
-        lastSeen: entry.lastSeen?.toISOString() || null,
-      }));
-      
-      res.json(pendingEquipment);
-    } catch (error) {
-      console.error("[ADMIN] Failed to fetch pending equipment:", error);
-      res.status(500).json({ message: "Failed to fetch pending equipment" });
-    }
-  });
-
-  // Approve a pending exercise (creates alias to existing exercise)
-  app.post("/api/admin/pending/exercises/:id/approve", isAuthenticatedOrDev, async (req: any, res) => {
-    const { id } = req.params;
-    const { exerciseId, newName } = req.body || {};
-    
-    try {
-      const [entry] = await db
-        .select()
-        .from(unmappedExercises)
-        .where(eq(unmappedExercises.id, id))
-        .limit(1);
-      
-      if (!entry) {
-        return res.status(404).json({ message: "Pending exercise not found" });
-      }
-      
-      const aiName = entry.aiName;
-      
-      if (exerciseId) {
-        // Create alias to existing exercise
-        const existingAlias = await db
-          .select()
-          .from(exerciseAliases)
-          .where(sql`${exerciseAliases.aliasName} = ${aiName} AND ${exerciseAliases.exerciseId} = ${exerciseId}`)
-          .limit(1);
-        
-        if (existingAlias.length === 0) {
-          await db.insert(exerciseAliases).values({
-            aliasName: aiName,
-            exerciseId,
-            createdBy: req.user?.claims?.sub,
-          });
-        }
-        
-        await db.delete(unmappedExercises).where(eq(unmappedExercises.id, id));
-        
-        // Fetch the linked exercise to return
-        const [linkedExercise] = await db
-          .select()
-          .from(exercises)
-          .where(eq(exercises.id, exerciseId))
-          .limit(1);
-        
-        return res.json({
-          id: linkedExercise?.id || exerciseId,
-          name: linkedExercise?.name || aiName,
-          nameEn: linkedExercise?.nameEn || null,
-          resolvedAs: "alias",
-        });
-      } else if (newName) {
-        // Create new exercise in catalog
-        const [created] = await db
-          .insert(exercises)
-          .values({
-            name: newName,
-            nameEn: newName,
-            category: "Other",
-            difficulty: "Intermediate",
-            primaryMuscles: [],
-            requiredEquipment: [],
-            isCompound: false,
-          })
-          .returning();
-        
-        await db.insert(exerciseAliases).values({
-          aliasName: aiName,
-          exerciseId: created.id,
-          createdBy: req.user?.claims?.sub,
-        });
-        
-        await db.delete(unmappedExercises).where(eq(unmappedExercises.id, id));
-        
-        return res.json({
-          id: created.id,
-          name: created.name,
-          nameEn: created.nameEn,
-          resolvedAs: "new",
-        });
-      } else {
-        return res.status(400).json({ message: "Either exerciseId or newName is required" });
-      }
-    } catch (error) {
-      console.error("[ADMIN] Failed to approve pending exercise:", error);
-      res.status(500).json({ message: "Failed to approve pending exercise" });
-    }
-  });
-
-  // Reject a pending exercise
-  app.post("/api/admin/pending/exercises/:id/reject", isAuthenticatedOrDev, async (req: any, res) => {
-    const { id } = req.params;
-    const { reason } = req.body || {};
-    
-    try {
-      const [entry] = await db
-        .select()
-        .from(unmappedExercises)
-        .where(eq(unmappedExercises.id, id))
-        .limit(1);
-      
-      if (!entry) {
-        return res.status(404).json({ message: "Pending exercise not found" });
-      }
-      
-      await db.delete(unmappedExercises).where(eq(unmappedExercises.id, id));
-      
-      console.log(`[ADMIN] Rejected pending exercise: "${entry.aiName}" - Reason: ${reason || "No reason provided"}`);
-      
-      res.json({ success: true, id, reason: reason || null });
-    } catch (error) {
-      console.error("[ADMIN] Failed to reject pending exercise:", error);
-      res.status(500).json({ message: "Failed to reject pending exercise" });
-    }
-  });
-
-  // Approve a pending equipment
-  app.post("/api/admin/pending/equipment/:id/approve", isAuthenticatedOrDev, async (req: any, res) => {
-    const { id } = req.params;
-    const { equipmentId, newName } = req.body || {};
-    
-    try {
-      const [entry] = await db
-        .select()
-        .from(unmappedEquipment)
-        .where(eq(unmappedEquipment.id, id))
-        .limit(1);
-      
-      if (!entry) {
-        return res.status(404).json({ message: "Pending equipment not found" });
-      }
-      
-      const aiName = entry.aiName;
-      
-      if (equipmentId) {
-        // Create alias to existing equipment
-        const existingAlias = await db
-          .select()
-          .from(equipmentAliases)
-          .where(sql`${equipmentAliases.aliasName} = ${aiName} AND ${equipmentAliases.equipmentId} = ${equipmentId}`)
-          .limit(1);
-        
-        if (existingAlias.length === 0) {
-          await db.insert(equipmentAliases).values({
-            aliasName: aiName,
-            equipmentId,
-            createdBy: req.user?.claims?.sub,
-          });
-        }
-        
-        await db.delete(unmappedEquipment).where(eq(unmappedEquipment.id, id));
-        
-        // Fetch the linked equipment to return
-        const [linkedEquipment] = await db
-          .select()
-          .from(equipmentCatalog)
-          .where(eq(equipmentCatalog.id, equipmentId))
-          .limit(1);
-        
-        return res.json({
-          id: linkedEquipment?.id || equipmentId,
-          name: linkedEquipment?.name || aiName,
-          nameEn: linkedEquipment?.nameEn || null,
-          resolvedAs: "alias",
-        });
-      } else if (newName) {
-        // Create new equipment in catalog
-        const [created] = await db
-          .insert(equipmentCatalog)
-          .values({
-            name: newName,
-            nameEn: newName,
-            category: "Other",
-            type: "Other",
-            description: null,
-          })
-          .returning();
-        
-        await db.insert(equipmentAliases).values({
-          aliasName: aiName,
-          equipmentId: created.id,
-          createdBy: req.user?.claims?.sub,
-        });
-        
-        await db.delete(unmappedEquipment).where(eq(unmappedEquipment.id, id));
-        
-        return res.json({
-          id: created.id,
-          name: created.name,
-          nameEn: created.nameEn,
-          resolvedAs: "new",
-        });
-      } else {
-        return res.status(400).json({ message: "Either equipmentId or newName is required" });
-      }
-    } catch (error) {
-      console.error("[ADMIN] Failed to approve pending equipment:", error);
-      res.status(500).json({ message: "Failed to approve pending equipment" });
-    }
-  });
-
-  // Reject a pending equipment
-  app.post("/api/admin/pending/equipment/:id/reject", isAuthenticatedOrDev, async (req: any, res) => {
-    const { id } = req.params;
-    const { reason } = req.body || {};
-    
-    try {
-      const [entry] = await db
-        .select()
-        .from(unmappedEquipment)
-        .where(eq(unmappedEquipment.id, id))
-        .limit(1);
-      
-      if (!entry) {
-        return res.status(404).json({ message: "Pending equipment not found" });
-      }
-      
-      await db.delete(unmappedEquipment).where(eq(unmappedEquipment.id, id));
-      
-      console.log(`[ADMIN] Rejected pending equipment: "${entry.aiName}" - Reason: ${reason || "No reason provided"}`);
-      
-      res.json({ success: true, id, reason: reason || null });
-    } catch (error) {
-      console.error("[ADMIN] Failed to reject pending equipment:", error);
-      res.status(500).json({ message: "Failed to reject pending equipment" });
-    }
-  });
   app.get("/api/admin/exercises/export-csv", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       // Get all exercises with usage count from exercise_logs
@@ -3384,319 +2029,6 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  // ==========iOS APP API ENDPOINTS ==========
-  
-  // Get exercise catalog for iOS app
-  app.get("/api/exercises/catalog", async (req, res) => {
-    try {
-      const allExercises = await db
-        .select()
-        .from(exercises)
-        .orderBy(exercises.name);
-      
-      res.json(allExercises);
-    } catch (error) {
-      console.error("Exercise catalog error:", error);
-      res.status(500).json({ message: "Failed to fetch exercise catalog" });
-    }
-  });
-
-  // Get equipment catalog for iOS app
-  app.get("/api/equipment/catalog", async (req, res) => {
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    console.log(`[BACKEND] Received /api/equipment/catalog request at ${new Date().toISOString()}`);
-    const startTime = Date.now();
-    try {
-      const allEquipment = await db.select().from(equipmentCatalog);
-      console.log(`[BACKEND] Found ${allEquipment.length} equipment items in database.`);
-      if (allEquipment.length > 0) {
-        console.log(`[BACKEND] First 5 items: ${JSON.stringify(allEquipment.slice(0, 5))}`);
-      } else {
-        console.log("[BACKEND] Database is empty for equipment catalog.");
-      }
-      res.json(allEquipment);
-      const duration = Date.now() - startTime;
-      console.log(`[BACKEND] /api/equipment/catalog completed in ${duration}ms`);
-      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    } catch (error) {
-      const duration = Date.now() - startTime;
-      console.error(`[BACKEND] Error fetching equipment catalog after ${duration}ms:`, error);
-      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      res.status(500).json({ message: "Failed to fetch equipment catalog" });
-    }
-  });
-
-  // Get gym programs for iOS app
-  app.get("/api/gym-programs", isAuthenticatedOrDev, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      // Get all user's gyms and their programs
-      const gyms = await storage.getUserGyms(userId);
-      const programs = await Promise.all(
-        gyms.map(async (gym) => {
-          const program = await storage.getGymProgram(userId, gym.id);
-          return program ? { gymId: gym.id, gymName: gym.name, program } : null;
-        })
-      );
-      res.json(programs.filter(Boolean));
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch gym programs" });
-    }
-  });
-
-  // Track unmapped exercises from iOS app
-  app.post("/api/exercises/unmapped", isAuthenticatedOrDev, async (req: any, res) => {
-    try {
-      const { aiName, suggestedMatch } = req.body;
-      
-      if (!aiName) {
-        return res.status(400).json({ message: "aiName is required" });
-      }
-
-      // Log the unmapped exercise for admin review
-      console.log(`[UNMAPPED EXERCISE] AI: "${aiName}", Suggested: "${suggestedMatch || 'none'}"`);
-      
-      // TODO: Store in database table for admin review
-      // For now, just log it
-      
-      res.json({ 
-        success: true, 
-        message: "Unmapped exercise tracked"
-      });
-    } catch (error) {
-      res.status(500).json({ message: "Failed to track unmapped exercise" });
-    }
-  });
-
   const httpServer = createServer(app);
   return httpServer;
-}
-
-// Helper function to calculate suggested training goals
-function calculateSuggestedGoals(input: {
-  motivationType?: string;
-  trainingLevel?: string;
-  age?: number;
-  sex?: string;
-  bodyWeight?: number;
-  height?: number;
-  oneRmValues: {
-    oneRmBench: number | null;
-    oneRmOhp: number | null;
-    oneRmDeadlift: number | null;
-    oneRmSquat: number | null;
-    oneRmLatpull: number | null;
-  };
-}): { goalStrength: number; goalVolume: number; goalEndurance: number; goalCardio: number } {
-  let strength = 25;
-  let volume = 25;
-  let endurance = 25;
-  let cardio = 25;
-
-  // Base distribution on motivationType
-  switch (input.motivationType) {
-    case "viktminskning":
-      cardio = 40;
-      endurance = 30;
-      strength = 20;
-      volume = 10;
-      break;
-    case "rehabilitering":
-      strength = 30;
-      endurance = 40;
-      volume = 20;
-      cardio = 10;
-      break;
-    case "hälsa_livsstil":
-      endurance = 35;
-      cardio = 35;
-      strength = 20;
-      volume = 10;
-      break;
-    case "sport":
-      strength = 35;
-      endurance = 30;
-      volume = 20;
-      cardio = 15;
-      break;
-    case "fitness":
-    default:
-      // Default balanced distribution
-      strength = 30;
-      volume = 30;
-      endurance = 25;
-      cardio = 15;
-      break;
-  }
-
-  // Adjust based on training level
-  if (input.trainingLevel === "nybörjare") {
-    strength = Math.max(15, strength - 10);
-    volume = Math.max(10, volume - 10);
-    endurance += 10;
-    cardio += 10;
-  } else if (input.trainingLevel === "mycket_van" || input.trainingLevel === "elit") {
-    strength += 10;
-    volume += 5;
-    endurance = Math.max(15, endurance - 10);
-    cardio = Math.max(10, cardio - 5);
-  }
-
-  // Adjust based on 1RM values (high values = more strength/volume focus)
-  const oneRmValues = [
-    input.oneRmValues.oneRmBench,
-    input.oneRmValues.oneRmOhp,
-    input.oneRmValues.oneRmDeadlift,
-    input.oneRmValues.oneRmSquat,
-  ].filter((v): v is number => v !== null && v > 0);
-
-  if (oneRmValues.length > 0) {
-    const avgOneRm = oneRmValues.reduce((a, b) => a + b, 0) / oneRmValues.length;
-
-    if (avgOneRm > 100) {
-      // Strong person - focus more on strength and volume
-      strength += 10;
-      volume += 5;
-      endurance = Math.max(15, endurance - 10);
-      cardio = Math.max(10, cardio - 5);
-    } else if (avgOneRm < 50 && oneRmValues.length >= 2) {
-      // Beginner/weak - more balanced with endurance
-      strength = Math.max(15, strength - 5);
-      volume = Math.max(10, volume - 5);
-      endurance += 5;
-      cardio += 5;
-    }
-  }
-
-  // Adjust based on age (older = more endurance/cardio focus)
-  if (input.age && input.age > 50) {
-    strength = Math.max(15, strength - 5);
-    volume = Math.max(10, volume - 5);
-    endurance += 5;
-    cardio += 5;
-  }
-
-  // Normalize to 100%
-  const total = strength + volume + endurance + cardio;
-  const normalized = {
-    goalStrength: Math.round((strength / total) * 100),
-    goalVolume: Math.round((volume / total) * 100),
-    goalEndurance: Math.round((endurance / total) * 100),
-    goalCardio: Math.round((cardio / total) * 100),
-  };
-
-  // Final check to ensure sum is exactly 100
-  const sum = normalized.goalStrength + normalized.goalVolume + normalized.goalEndurance + normalized.goalCardio;
-  if (sum !== 100) {
-    const diff = 100 - sum;
-    normalized.goalStrength += diff; // Add difference to strength
-  }
-
-  return normalized;
-}
-
-// Helper function to calculate suggested 1RM values
-function calculateSuggestedOneRm(input: {
-  motivationType?: string;
-  trainingLevel?: string;
-  age: number;
-  sex: string;
-  bodyWeight: number;
-  height: number;
-}): {
-  oneRmBench: number;
-  oneRmOhp: number;
-  oneRmDeadlift: number;
-  oneRmSquat: number;
-  oneRmLatpull: number;
-} {
-  // Base multipliers based on body weight
-  // Typical ratios: Bench ~1.0x, OHP ~0.6x, Deadlift ~1.8x, Squat ~1.5x, Latpull ~0.8x
-  let benchMultiplier = 1.0;
-  let ohpMultiplier = 0.6;
-  let deadliftMultiplier = 1.8;
-  let squatMultiplier = 1.5;
-  let latpullMultiplier = 0.8;
-
-  // Adjust based on sex
-  if (input.sex === "kvinna" || input.sex === "woman" || input.sex === "female") {
-    benchMultiplier *= 0.7;
-    ohpMultiplier *= 0.7;
-    deadliftMultiplier *= 0.75;
-    squatMultiplier *= 0.75;
-    latpullMultiplier *= 0.7;
-  }
-
-  // Adjust based on training level
-  switch (input.trainingLevel) {
-    case "nybörjare":
-      benchMultiplier *= 0.5;
-      ohpMultiplier *= 0.5;
-      deadliftMultiplier *= 0.5;
-      squatMultiplier *= 0.5;
-      latpullMultiplier *= 0.5;
-      break;
-    case "van":
-      benchMultiplier *= 0.75;
-      ohpMultiplier *= 0.75;
-      deadliftMultiplier *= 0.75;
-      squatMultiplier *= 0.75;
-      latpullMultiplier *= 0.75;
-      break;
-    case "mycket_van":
-      benchMultiplier *= 1.0;
-      ohpMultiplier *= 1.0;
-      deadliftMultiplier *= 1.0;
-      squatMultiplier *= 1.0;
-      latpullMultiplier *= 1.0;
-      break;
-    case "elit":
-      benchMultiplier *= 1.3;
-      ohpMultiplier *= 1.3;
-      deadliftMultiplier *= 1.3;
-      squatMultiplier *= 1.3;
-      latpullMultiplier *= 1.3;
-      break;
-  }
-
-  // Adjust based on motivation type
-  switch (input.motivationType) {
-    case "viktminskning":
-      // Lower strength focus
-      benchMultiplier *= 0.8;
-      ohpMultiplier *= 0.8;
-      deadliftMultiplier *= 0.8;
-      squatMultiplier *= 0.8;
-      latpullMultiplier *= 0.8;
-      break;
-    case "sport":
-      // Higher strength focus
-      benchMultiplier *= 1.1;
-      ohpMultiplier *= 1.1;
-      deadliftMultiplier *= 1.1;
-      squatMultiplier *= 1.1;
-      latpullMultiplier *= 1.1;
-      break;
-  }
-
-  // Adjust based on age (older = lower strength)
-  if (input.age > 50) {
-    const ageFactor = Math.max(0.7, 1 - (input.age - 50) * 0.01);
-    benchMultiplier *= ageFactor;
-    ohpMultiplier *= ageFactor;
-    deadliftMultiplier *= ageFactor;
-    squatMultiplier *= ageFactor;
-    latpullMultiplier *= ageFactor;
-  }
-
-  // Calculate 1RM values (rounded to nearest 5kg)
-  const roundTo5 = (value: number) => Math.round(value / 5) * 5;
-
-  return {
-    oneRmBench: Math.max(20, roundTo5(input.bodyWeight * benchMultiplier)),
-    oneRmOhp: Math.max(15, roundTo5(input.bodyWeight * ohpMultiplier)),
-    oneRmDeadlift: Math.max(30, roundTo5(input.bodyWeight * deadliftMultiplier)),
-    oneRmSquat: Math.max(25, roundTo5(input.bodyWeight * squatMultiplier)),
-    oneRmLatpull: Math.max(20, roundTo5(input.bodyWeight * latpullMultiplier)),
-  };
 }
