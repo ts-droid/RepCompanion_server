@@ -1,8 +1,13 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
 import { isAuthenticatedOrDev } from "./devAuth";
+import { 
+  verifyAppleToken, 
+  verifyGoogleToken, 
+  createInternalToken, 
+  upsertUserFromAuth 
+} from "./auth";
 import { insertUserProfileSchema, updateUserProfileSchema, insertGymSchema, updateGymSchema, insertEquipmentSchema, insertWorkoutSessionSchema, insertExerciseLogSchema, updateExerciseLogSchema, suggestAlternativeRequestSchema, suggestAlternativeResponseSchema, trackPromoImpressionSchema, trackAffiliateClickSchema, insertNotificationPreferencesSchema, promoIdParamSchema, promoPlacementParamSchema, generateProgramRequestSchema, exercises, exerciseLogs, workoutSessions, programTemplateExercises, type ExerciseLog } from "@shared/schema";
 import { z, ZodError } from "zod";
 import { generateWorkoutProgram, generateWorkoutProgramWithReasoner, generateWorkoutProgramWithVersionSwitch } from "./ai-service";
@@ -14,16 +19,81 @@ import { db } from "./db";
 import { eq, sql, and, gte, lte, desc } from "drizzle-orm";
 import { healthConnections, healthMetrics } from "@shared/schema";
 
-export async function registerRoutes(app: Express): Promise<Server> {
-  // Setup authentication
-  await setupAuth(app);
+const authRequestSchema = z.object({
+  idToken: z.string().min(1, "ID Token is required"),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+});
 
+export async function registerRoutes(app: Express): Promise<Server> {
   // ========== AUTH ROUTES ==========
   
+  app.post("/api/auth/apple", async (req, res) => {
+    try {
+      const { idToken, firstName, lastName } = authRequestSchema.parse(req.body);
+      const authUser = await verifyAppleToken(idToken);
+      
+      // Use name from request if token doesn't provide it (common for Apple)
+      if (firstName) authUser.firstName = firstName;
+      if (lastName) authUser.lastName = lastName;
+      
+      const user = await upsertUserFromAuth(authUser);
+      const token = createInternalToken(user.id);
+      
+      res.json({
+        token,
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+        }
+      });
+    } catch (error) {
+      res.status(401).json({ 
+        message: "Apple authentication failed",
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
+  app.post("/api/auth/google", async (req, res) => {
+    try {
+      const { idToken, firstName, lastName } = authRequestSchema.parse(req.body);
+      const authUser = await verifyGoogleToken(idToken);
+      
+      // Allow overriding/supplementing name from request
+      if (firstName) authUser.firstName = firstName;
+      if (lastName) authUser.lastName = lastName;
+      
+      const user = await upsertUserFromAuth(authUser);
+      const token = createInternalToken(user.id);
+      
+      res.json({
+        token,
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          profileImageUrl: user.profileImageUrl,
+        }
+      });
+    } catch (error) {
+      res.status(401).json({ 
+        message: "Google authentication failed",
+        error: error instanceof Error ? error.message : String(error) 
+      });
+    }
+  });
+
   app.get("/api/auth/user", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
       res.json(user);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch user" });

@@ -1,5 +1,6 @@
 import type { RequestHandler } from "express";
 import { storage } from "./storage";
+import { verifyInternalToken } from "./auth";
 
 export const DEV_USER_ID = "dev-user-123";
 
@@ -21,6 +22,29 @@ async function ensureDevUserExists() {
 }
 
 export const devAuthMiddleware: RequestHandler = async (req: any, res, next) => {
+  // Support Bearer Token
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.substring(7);
+    const userId = verifyInternalToken(token);
+    if (userId) {
+      const dbUser = await storage.getUser(userId);
+      if (dbUser) {
+        req.user = {
+          claims: {
+            sub: dbUser.id,
+            email: dbUser.email,
+            first_name: dbUser.firstName,
+            last_name: dbUser.lastName,
+            profile_image_url: dbUser.profileImageUrl,
+          }
+        };
+        req.isAuthenticated = () => true;
+        return next();
+      }
+    }
+  }
+
   if (process.env.NODE_ENV === "development" && !req.user) {
     await ensureDevUserExists();
     
@@ -43,7 +67,31 @@ export const devAuthMiddleware: RequestHandler = async (req: any, res, next) => 
 };
 
 export const isAuthenticatedOrDev: RequestHandler = async (req: any, res, next) => {
-  if (process.env.NODE_ENV === "development" && !req.isAuthenticated()) {
+  // Support Bearer Token if not already authenticated
+  if (!req.user || !req.user.claims?.sub) {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.substring(7);
+      const userId = verifyInternalToken(token);
+      if (userId) {
+        const dbUser = await storage.getUser(userId);
+        if (dbUser) {
+          req.user = {
+            claims: {
+              sub: dbUser.id,
+              email: dbUser.email,
+              first_name: dbUser.firstName,
+              last_name: dbUser.lastName,
+              profile_image_url: dbUser.profileImageUrl,
+            }
+          };
+          req.isAuthenticated = () => true;
+        }
+      }
+    }
+  }
+
+  if (process.env.NODE_ENV === "development" && (!req.user || !req.user.claims?.sub)) {
     await ensureDevUserExists();
     
     req.user = {
@@ -58,12 +106,14 @@ export const isAuthenticatedOrDev: RequestHandler = async (req: any, res, next) 
       refresh_token: null,
       expires_at: Math.floor(Date.now() / 1000) + 3600,
     };
+    req.isAuthenticated = () => true;
     return next();
   }
 
-  if (!req.isAuthenticated() || !req.user?.claims?.sub) {
-    return res.status(401).json({ message: "Unauthorized" });
+  // Check if authenticated (either via session or JWT)
+  if ((req.isAuthenticated && req.isAuthenticated()) || (req.user && req.user.claims?.sub)) {
+    return next();
   }
 
-  next();
+  return res.status(401).json({ message: "Unauthorized" });
 };

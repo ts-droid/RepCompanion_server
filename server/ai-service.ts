@@ -2,6 +2,7 @@ import type { UserProfile, UserEquipment } from "@shared/schema";
 import { z } from "zod";
 import OpenAI from "openai";
 import { AI_CONFIG_V2, type PromptContextV2 } from "./ai-prompts-v2";
+import { AI_CONFIG_V3, type PromptContextV3 } from "./ai-prompts-v3";
 
 // OpenAI client using Replit AI Integrations (no API key needed, billed to credits)
 const openai = new OpenAI({
@@ -969,7 +970,8 @@ export async function generateWorkoutProgramWithVersionSwitch(
 ): Promise<DeepSeekWorkoutProgram> {
   console.log(`[VERSION SWITCHER] Using AI prompt version: ${AI_PROMPT_VERSION}`);
   
-  if (AI_PROMPT_VERSION === 'v2') {
+  if (AI_PROMPT_VERSION === 'v2' || AI_PROMPT_VERSION === 'v3') {
+    const versionLabel = AI_PROMPT_VERSION.toUpperCase();
     // Comprehensive V2 prerequisites validation
     if (!profileData) {
       console.warn(`[VERSION SWITCHER] V2 requires profile data, falling back to V1`);
@@ -1020,21 +1022,21 @@ export async function generateWorkoutProgramWithVersionSwitch(
       equipmentList: profileData.equipmentList || '',
     };
     
-    console.log(`[V2] Generating with ultrafast mode (900 tokens, 25s timeout)`);
+    console.log(`[${versionLabel}] Generating with ultrafast mode (900 tokens, 25s timeout)`);
     const programV2 = await generateWorkoutProgramV2WithOpenAI(context, 'ultrafast');
     
     // Convert V2 format to DeepSeek format for storage compatibility
     const converted = convertV2ToDeepSeekFormat(programV2, profileData, profileData.equipmentList);
-    console.log(`[V2] Successfully converted to DeepSeek format`);
+    console.log(`[${versionLabel}] Successfully converted to DeepSeek format`);
     
     // CRITICAL: Validate converted output against DeepSeek schema before returning
     // This ensures V2→V1 conversion never produces invalid payloads in production
     try {
       deepSeekWorkoutProgramSchema.parse(converted);
-      console.log(`[V2] ✅ Schema validation passed - safe for storage`);
+      console.log(`[${versionLabel}] ✅ Schema validation passed - safe for storage`);
     } catch (validationError) {
-      console.error(`[V2] ❌ Schema validation FAILED:`, validationError);
-      throw new Error(`V2→V1 conversion produced invalid DeepSeek payload: ${validationError}`);
+      console.error(`[${versionLabel}] ❌ Schema validation FAILED:`, validationError);
+      throw new Error(`${versionLabel}→V1 conversion produced invalid DeepSeek payload: ${validationError}`);
     }
     
     return converted;
