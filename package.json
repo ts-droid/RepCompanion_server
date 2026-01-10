@@ -5,7 +5,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "NODE_ENV=development tsx server/index.ts",
-    "build": "vite build && echo 'Vite done, starting esbuild...' && rm -f dist/app.js && esbuild server/index.ts --platform=node --bundle --format=esm --outfile=dist/app.js && echo 'Build complete!' && ls -lh dist/app.js",
+    "build": "vite build && echo 'Vite done, starting esbuild...' && rm -f dist/app.js && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/app.js --log-level=warning && echo 'Build complete!' && ls -lh dist/app.js",
     "start": "NODE_ENV=production node dist/app.js",
     "check": "tsc",
     "db:push": "drizzle-kit push",
