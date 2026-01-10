@@ -66,7 +66,8 @@ app.use((req, res, next) => {
   if (app.get("env") === "development") {
     await setupVite(app, server);
   } else {
-    serveStatic(app);
+    // Skip static file serving for now - API-only in production
+    log("Running as API-only server");
   }
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
