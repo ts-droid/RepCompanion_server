@@ -53,17 +53,24 @@ export async function verifyAppleToken(idToken: string): Promise<AuthUser> {
 }
 
 export async function verifyGoogleToken(idToken: string): Promise<AuthUser> {
+  console.log("[Auth] 🔍 Verifying Google token...");
   const decoded = jwt.decode(idToken, { complete: true }) as any;
   if (!decoded || !decoded.header.kid) {
+    console.log("[Auth] ❌ Invalid token - no kid in header");
     throw new Error("Invalid Google ID Token");
   }
+  console.log("[Auth] ✅ Token decoded, kid:", decoded.header.kid);
+  console.log("[Auth] 📋 Expected audience (GOOGLE_CLIENT_ID):", process.env.GOOGLE_CLIENT_ID);
+  console.log("[Auth] 📋 Token audience:", decoded.payload.aud);
 
   const publicKey = await getSigningKey(googleClient, decoded.header.kid);
+  console.log("[Auth] ✅ Got public key for verification");
   const payload = jwt.verify(idToken, publicKey, {
     algorithms: ["RS256"],
     issuer: ["accounts.google.com", "https://accounts.google.com"],
     audience: process.env.GOOGLE_CLIENT_ID, // Validate that the token was intended for our app
   }) as any;
+  console.log("[Auth] ✅ Token verified successfully");
 
   return {
     id: payload.sub,

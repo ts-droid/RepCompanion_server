@@ -72,8 +72,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/auth/google", async (req, res) => {
     try {
+      console.log("[Auth] 🔐 Google Sign-In attempt");
       const { idToken, firstName, lastName } = authRequestSchema.parse(req.body);
+      console.log("[Auth] 📋 Request data - firstName:", firstName, "lastName:", lastName);
+      console.log("[Auth] 🎫 ID Token (first 50 chars):", idToken.substring(0, 50));
       const authUser = await verifyGoogleToken(idToken);
+      console.log("[Auth] ✅ Google token verified for user:", authUser.email);
       
       // Allow overriding/supplementing name from request
       if (firstName) authUser.firstName = firstName;
@@ -93,6 +97,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
     } catch (error) {
+      console.log("[Auth] ❌ Google authentication failed:", error instanceof Error ? error.message : String(error));
+      console.log("[Auth] 📊 Error stack:", error instanceof Error ? error.stack : "No stack");
       res.status(401).json({ 
         message: "Google authentication failed",
         error: error instanceof Error ? error.message : String(error) 
