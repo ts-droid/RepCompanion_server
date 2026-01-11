@@ -6,8 +6,10 @@ import {
   verifyAppleToken, 
   verifyGoogleToken, 
   createInternalToken, 
-  upsertUserFromAuth 
+  upsertUserFromAuth,
+  JWT_SECRET
 } from "./auth";
+import jwt from "jsonwebtoken";
 import { insertUserProfileSchema, updateUserProfileSchema, insertGymSchema, updateGymSchema, insertEquipmentSchema, insertWorkoutSessionSchema, insertExerciseLogSchema, updateExerciseLogSchema, suggestAlternativeRequestSchema, suggestAlternativeResponseSchema, trackPromoImpressionSchema, trackAffiliateClickSchema, insertNotificationPreferencesSchema, promoIdParamSchema, promoPlacementParamSchema, generateProgramRequestSchema, exercises, exerciseLogs, workoutSessions, programTemplateExercises, type ExerciseLog } from "@shared/schema";
 import { z, ZodError } from "zod";
 import { generateWorkoutProgram, generateWorkoutProgramWithReasoner, generateWorkoutProgramWithVersionSwitch } from "./ai-service";
@@ -94,6 +96,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: "Google authentication failed",
         error: error instanceof Error ? error.message : String(error) 
       });
+    }
+  });
+
+  app.post("/api/auth/magic-link", async (req, res) => {
+    try {
+      const { email } = z.object({ email: z.string().email() }).parse(req.body);
+      
+      // Generate a short-lived token for the magic link
+      // We use createInternalToken but we might want a specific expiry/subject for magic links
+      // For now, we'll reuse the JWT secret but with a 15-minute expiry
+      const magicToken = jwt.sign({ email, type: "magic-link" }, JWT_SECRET, { expiresIn: "15m" });
+      
+      const link = `repcompanion://magic-link?token=${magicToken}`;
+      
+      // TODO: Actually send email. For now, we'll log it for the user to see in logs
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      console.log(`[MAGIC LINK] Created for: ${email}`);
+      console.log(`[MAGIC LINK] URL: ${link}`);
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      
+      res.json({ message: "Magic link sent" });
+    } catch (error) {
+      res.status(400).json({ message: "Invalid email" });
+    }
+  });
+
+  app.post("/api/auth/magic-link/verify", async (req, res) => {
+    try {
+      const { token } = z.object({ token: z.string() }).parse(req.body);
+      
+      const decoded = jwt.verify(token, JWT_SECRET) as any;
+      if (decoded.type !== "magic-link") {
+        throw new Error("Invalid token type");
+      }
+      
+      const email = decoded.email;
+      const user = await upsertUserFromAuth({
+        id: `magic_${email}`, // Use email-based ID for magic link users
+        email: email,
+      });
+      
+      const internalToken = createInternalToken(user.id);
+      
+      res.json({
+        token: internalToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+        }
+      });
+    } catch (error) {
+      res.status(401).json({ message: "Invalid or expired magic link" });
     }
   });
 

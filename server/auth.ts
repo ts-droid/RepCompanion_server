@@ -2,7 +2,7 @@ import jwt from "jsonwebtoken";
 import jwksClient from "jwks-rsa";
 import { storage } from "./storage";
 
-const JWT_SECRET = process.env.SESSION_SECRET || "rep-companion-secret";
+export const JWT_SECRET = process.env.SESSION_SECRET || "rep-companion-secret";
 
 // Apple JWKS client
 const appleClient = jwksClient({
