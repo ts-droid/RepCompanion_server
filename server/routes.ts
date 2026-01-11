@@ -644,6 +644,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Equipment Catalog (public endpoint for onboarding)
+  app.get("/api/equipment/catalog", async (_req, res) => {
+    try {
+      const catalog = await storage.getEquipmentCatalog();
+      res.json(catalog);
+    } catch (error) {
+      console.error('[EQUIPMENT CATALOG] Error:', error);
+      res.status(500).json({ message: "Failed to fetch equipment catalog" });
+    }
+  });
+
   // ========== GYM PROGRAM ROUTES ==========
   
   app.get("/api/gym-programs/:gymId", isAuthenticatedOrDev, async (req: any, res) => {

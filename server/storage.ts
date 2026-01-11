@@ -80,6 +80,7 @@ export interface IStorage {
   getGymEquipment(gymId: string): Promise<UserEquipment[]>;
   upsertEquipment(equipment: InsertUserEquipment): Promise<UserEquipment>;
   deleteEquipment(id: string): Promise<void>;
+  getEquipmentCatalog(): Promise<any[]>;
   
   // Gym program operations
   createGymProgram(program: InsertGymProgram): Promise<GymProgram>;
@@ -373,6 +374,11 @@ export class DatabaseStorage implements IStorage {
 
   async deleteEquipment(id: string): Promise<void> {
     await db.delete(userEquipment).where(eq(userEquipment.id, id));
+  }
+
+  async getEquipmentCatalog(): Promise<any[]> {
+    const { equipmentCatalog } = await import("@shared/schema");
+    return await db.select().from(equipmentCatalog);
   }
 
   // ========== Gym program operations ==========
