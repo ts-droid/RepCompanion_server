@@ -9,6 +9,7 @@ import {
   upsertUserFromAuth,
   JWT_SECRET
 } from "./auth";
+import { sendMagicLinkEmail } from "./email-service";
 import jwt from "jsonwebtoken";
 import { insertUserProfileSchema, updateUserProfileSchema, insertGymSchema, updateGymSchema, insertEquipmentSchema, insertWorkoutSessionSchema, insertExerciseLogSchema, updateExerciseLogSchema, suggestAlternativeRequestSchema, suggestAlternativeResponseSchema, trackPromoImpressionSchema, trackAffiliateClickSchema, insertNotificationPreferencesSchema, promoIdParamSchema, promoPlacementParamSchema, generateProgramRequestSchema, exercises, exerciseLogs, workoutSessions, programTemplateExercises, type ExerciseLog } from "@shared/schema";
 import { z, ZodError } from "zod";
@@ -104,21 +105,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { email } = z.object({ email: z.string().email() }).parse(req.body);
       
       // Generate a short-lived token for the magic link
-      // We use createInternalToken but we might want a specific expiry/subject for magic links
-      // For now, we'll reuse the JWT secret but with a 15-minute expiry
       const magicToken = jwt.sign({ email, type: "magic-link" }, JWT_SECRET, { expiresIn: "15m" });
       
       const link = `repcompanion://magic-link?token=${magicToken}`;
       
-      // TODO: Actually send email. For now, we'll log it for the user to see in logs
-      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      console.log(`[MAGIC LINK] Created for: ${email}`);
-      console.log(`[MAGIC LINK] URL: ${link}`);
-      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      // Send email via Resend (or log to console if no API key)
+      await sendMagicLinkEmail({
+        to: email,
+        magicLink: link,
+      });
       
       res.json({ message: "Magic link sent" });
     } catch (error) {
-      res.status(400).json({ message: "Invalid email" });
+      console.error('[MAGIC LINK] Error:', error);
+      res.status(400).json({ message: "Failed to send magic link" });
     }
   });
 
