@@ -46,7 +46,7 @@ export default function Alternatives() {
     queryKey: ["/api/gyms"],
   });
 
-  const activeGym = gyms?.find(g => g.isActive);
+  const activeGym = gyms?.find(g => g.id === profile?.selectedGymId);
   const activeGymId = activeGym?.id;
   const availableEquipment = equipment?.filter(e => e.gymId === activeGymId) || [];
 

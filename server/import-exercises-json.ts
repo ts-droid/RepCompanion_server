@@ -281,7 +281,7 @@ async function importExercises() {
         await db
           .update(exercises)
           .set({
-            exerciseId: ex["Exercise ID"],
+            exerciseId: String(ex["Exercise ID"]),
             nameEn: existing.nameEn || englishName,
             requiredEquipment: mapEquipmentToArray(ex.Equipment),
             primaryMuscles: ex["Muscle group(s)"],
@@ -299,7 +299,7 @@ async function importExercises() {
         console.log(`Updated: ${ex.Name} (matched: ${existing.name})`);
       } else {
         await db.insert(exercises).values({
-          exerciseId: ex["Exercise ID"],
+          exerciseId: String(ex["Exercise ID"]),
           name: ex.Name,
           nameEn: englishName,
           category: getCategory(ex.Categories),

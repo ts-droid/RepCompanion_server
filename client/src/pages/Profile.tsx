@@ -140,10 +140,10 @@ export default function Profile() {
                         className="w-full h-full object-cover"
                       />
                     )}
-                    {profile?.avatarType === "generated" && profile?.avatarConfig && (
+                    {profile?.avatarType === "generated" && !!profile?.avatarConfig && (
                       <AvatarGenerator
                         style={{ width: "100%", height: "100%" }}
-                        {...profile.avatarConfig}
+                        {...(profile.avatarConfig as any)}
                       />
                     )}
                   </div>

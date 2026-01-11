@@ -227,7 +227,7 @@ export default function EditProgram() {
         targetSets: 3,
         targetReps: 8,
       });
-      return response as ProgramTemplateExercise;
+      return await response.json() as ProgramTemplateExercise;
     },
     onSuccess: (newExercise: ProgramTemplateExercise) => {
       setExercises([...exercises, newExercise]);

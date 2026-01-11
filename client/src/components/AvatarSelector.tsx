@@ -263,7 +263,7 @@ export default function AvatarSelector({
               <div className="flex justify-center mb-6">
                 <Avatar
                   style={{ width: "120px", height: "120px" }}
-                  {...generatedConfig}
+                  {...(generatedConfig as any)}
                 />
               </div>
 

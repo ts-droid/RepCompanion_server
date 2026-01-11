@@ -13,6 +13,7 @@ const mockProgramV2: WorkoutProgramV2 = {
       name: "Upper Body Strength",
       day: "Måndag",
       focus: "Strength",
+      targetDurationMinutes: 60,
       estimatedDurationMinutes: 58,
       exercises: [
         {
@@ -37,6 +38,7 @@ const mockProgramV2: WorkoutProgramV2 = {
       name: "Lower Body Hypertrophy",
       day: "Onsdag",
       focus: "Hypertrophy",
+      targetDurationMinutes: 60,
       estimatedDurationMinutes: 62,
       exercises: [
         {
@@ -51,6 +53,9 @@ const mockProgramV2: WorkoutProgramV2 = {
     }
   ],
   meta: {
+    sessionsPerWeek: 2,
+    targetSessionDurationMinutes: 60,
+    allowedDurationRangeMinutes: { min: 54, max: 66 },
     totalPlannedWeeklyMinutes: 120,
     notes: "Test program with V2 auto-1RM estimation"
   }
