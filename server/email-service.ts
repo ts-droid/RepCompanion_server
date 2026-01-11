@@ -1,7 +1,5 @@
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 export interface SendMagicLinkEmailParams {
   to: string;
   magicLink: string;
@@ -17,6 +15,9 @@ export async function sendMagicLinkEmail({ to, magicLink }: SendMagicLinkEmailPa
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     return;
   }
+
+  // Initialize Resend client only when API key is available
+  const resend = new Resend(process.env.RESEND_API_KEY);
 
   try {
     await resend.emails.send({
