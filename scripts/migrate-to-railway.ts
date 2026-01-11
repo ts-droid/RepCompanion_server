@@ -9,7 +9,8 @@
  * 4. Running data integrity checks
  */
 
-import { Client } from 'pg';
+import pkg from 'pg';
+const { Client } = pkg;
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs/promises';
@@ -66,8 +67,18 @@ async function getTableCounts(connectionString: string): Promise<Map<string, num
     
     for (const row of tablesResult.rows) {
       const tableName = row.tablename;
-      const countResult = await client.query(`SELECT COUNT(*) as count FROM "${tableName}"`);
-      counts.set(tableName, parseInt(countResult.rows[0].count));
+      try {
+        const countResult = await client.query(`SELECT COUNT(*) as count FROM "${tableName}"`);
+        counts.set(tableName, parseInt(countResult.rows[0].count));
+      } catch (error: any) {
+        // Table might not exist or have permissions issues - skip it
+        if (error.code === '42P01') {
+          // Table does not exist - this is OK, schema might be newer than data
+          await log(`Skipping table ${tableName} (does not exist in source)`, 'warn');
+        } else {
+          throw error;
+        }
+      }
     }
     
     return counts;

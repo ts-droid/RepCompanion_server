@@ -9,7 +9,8 @@
  * 4. Checking indexes and constraints
  */
 
-import { Client } from 'pg';
+import pkg from 'pg';
+const { Client } = pkg;
 
 async function log(message: string, level: 'info' | 'success' | 'error' | 'warn' = 'info') {
   const prefix = { info: '📋', success: '✅', error: '❌', warn: '⚠️' }[level];

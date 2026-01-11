@@ -26,6 +26,16 @@ const authRequestSchema = z.object({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // ========== PUBLIC ROUTES ==========
+  
+  app.get("/api/ping", (_req, res) => {
+    res.json({ 
+      status: "ok", 
+      message: "RepCompanion API is running",
+      time: new Date().toISOString()
+    });
+  });
+
   // ========== AUTH ROUTES ==========
   
   app.post("/api/auth/apple", async (req, res) => {
