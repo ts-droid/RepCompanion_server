@@ -362,8 +362,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user.claims.sub;
       const { profile, equipment } = req.body;
 
+      // DEBUG: Log received data
+      console.log("[Onboarding] 📥 Received request from user:", userId);
+      console.log("[Onboarding] 📋 Profile data:", JSON.stringify(profile, null, 2));
+      console.log("[Onboarding] 🏋️ Equipment:", equipment);
+
       if (!profile?.motivationType || !profile?.trainingLevel || !profile?.sessionsPerWeek || !profile?.sessionDuration) {
-        return res.status(400).json({ message: "Missing required profile fields" });
+        console.log("[Onboarding] ❌ Validation failed - missing required fields:");
+        console.log("  - motivationType:", profile?.motivationType);
+        console.log("  - trainingLevel:", profile?.trainingLevel);
+        console.log("  - sessionsPerWeek:", profile?.sessionsPerWeek);
+        console.log("  - sessionDuration:", profile?.sessionDuration);
+        return res.status(400).json({ 
+          message: "Missing required profile fields",
+          missing: {
+            motivationType: !profile?.motivationType,
+            trainingLevel: !profile?.trainingLevel,
+            sessionsPerWeek: !profile?.sessionsPerWeek,
+            sessionDuration: !profile?.sessionDuration
+          }
+        });
       }
 
       const goalStrength = Math.max(0, Math.min(100, profile.goalStrength ?? 50));
