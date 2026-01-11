@@ -399,18 +399,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const equipmentRegistered = equipment && Array.isArray(equipment) && equipment.length > 0;
 
-      const preliminaryProfile = insertUserProfileSchema.parse({
-        ...profile,
-        userId,
-        goalStrength,
-        goalVolume,
-        goalEndurance,
-        goalCardio,
-        sessionsPerWeek,
-        sessionDuration,
-        onboardingCompleted: false,
-        equipmentRegistered: false,
-      });
+      let preliminaryProfile;
+      try {
+        preliminaryProfile = insertUserProfileSchema.parse({
+          ...profile,
+          userId,
+          goalStrength,
+          goalVolume,
+          goalEndurance,
+          goalCardio,
+          sessionsPerWeek,
+          sessionDuration,
+          onboardingCompleted: false,
+          equipmentRegistered: false,
+        });
+      } catch (error) {
+        console.log("[Onboarding] ❌ Schema validation failed!");
+        console.log("[Onboarding] 📋 Error details:", JSON.stringify(error, null, 2));
+        if (error instanceof Error) {
+          console.log("[Onboarding] 📋 Error message:", error.message);
+        }
+        return res.status(400).json({ 
+          message: "Validation error",
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
 
       await storage.upsertUserProfile(preliminaryProfile);
 
