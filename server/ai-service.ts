@@ -13,9 +13,48 @@ const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY
 });
 
+// DeepSeek client (cheapest option)
+const deepseek = new OpenAI({
+  baseURL: process.env.AI_INTEGRATIONS_DEEPSEEK_BASE_URL || "https://api.deepseek.com/v1",
+  apiKey: process.env.AI_INTEGRATIONS_DEEPSEEK_API_KEY
+});
+
+// Gemini client (mid-tier pricing)
+const gemini = new OpenAI({
+  baseURL: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta/openai/",
+  apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY
+});
+
+// Provider priority: DeepSeek (cheapest) → Gemini → OpenAI (most expensive)
+// Set AI_PROVIDER_PRIORITY to override (e.g., "openai,gemini,deepseek")
+const DEFAULT_PROVIDER_PRIORITY = ["deepseek", "gemini", "openai"];
+const PROVIDER_PRIORITY = (process.env.AI_PROVIDER_PRIORITY || DEFAULT_PROVIDER_PRIORITY.join(","))
+  .split(",")
+  .map(p => p.trim().toLowerCase());
+
+console.log(`[AI PROVIDER] Priority order: ${PROVIDER_PRIORITY.join(" → ")}`);
+
+// Helper to get the first available AI client based on priority
+function getAIClient(): { client: OpenAI; provider: string; model: string } {
+  for (const provider of PROVIDER_PRIORITY) {
+    if (provider === "deepseek" && process.env.AI_INTEGRATIONS_DEEPSEEK_API_KEY) {
+      return { client: deepseek, provider: "DeepSeek", model: "deepseek-chat" };
+    }
+    if (provider === "gemini" && process.env.AI_INTEGRATIONS_GEMINI_API_KEY) {
+      return { client: gemini, provider: "Gemini", model: "gemini-2.0-flash-exp" };
+    }
+    if (provider === "openai" && process.env.AI_INTEGRATIONS_OPENAI_API_KEY) {
+      return { client: openai, provider: "OpenAI", model: "gpt-4o" };
+    }
+  }
+  
+  // Fallback to OpenAI if nothing else is available
+  console.warn("[AI PROVIDER] No preferred provider available, falling back to OpenAI");
+  return { client: openai, provider: "OpenAI (fallback)", model: "gpt-4o" };
+}
+
 // Version control: AI_PROMPT_VERSION env variable controls which prompt system to use
-// Default: 'v2' (ultrafast prompts with auto-1RM, 900 tokens, 120s timeout)
-// Set to 'v1' to use legacy system with 16000 max_tokens
+// Default: 'v4' (IDs-only blueprint with deterministic time fitting)
 const AI_PROMPT_VERSION = process.env.AI_PROMPT_VERSION || 'v4';
 console.log(`[AI VERSION] Using prompt version: ${AI_PROMPT_VERSION}`);
 
@@ -574,6 +613,8 @@ export async function generateWorkoutProgramV4WithOpenAI(
   profileData: any,
   targetDuration: number
 ): Promise<DeepSeekWorkoutProgram> {
+  const aiConfig = getAIClient();
+  console.log(`[V4] Using ${aiConfig.provider} for generation`);
   console.log("[V4] Starting Step A: Analysis");
   
   const analysisInput: V4Prompts.V4AnalysisInput = {
@@ -588,8 +629,8 @@ export async function generateWorkoutProgramV4WithOpenAI(
     }
   };
 
-  const analysisResponse = await openai.chat.completions.create({
-    model: "gpt-4o", // Use gpt-4o for complex analysis
+  const analysisResponse = await aiConfig.client.chat.completions.create({
+    model: aiConfig.model,
     messages: [
       { role: "system", content: V4Prompts.buildAnalysisSystemPromptV4() },
       { role: "user", content: V4Prompts.buildAnalysisUserPromptV4(analysisInput) }
@@ -643,8 +684,8 @@ export async function generateWorkoutProgramV4WithOpenAI(
     candidate_pools: candidatePools,
   };
 
-  const blueprintResponse = await openai.chat.completions.create({
-    model: "gpt-4o",
+  const blueprintResponse = await aiConfig.client.chat.completions.create({
+    model: aiConfig.model,
     messages: [
       { role: "system", content: V4Prompts.buildBlueprintSystemPromptV4() },
       { role: "user", content: V4Prompts.buildBlueprintUserPromptV4(blueprintInput) }
@@ -684,6 +725,8 @@ export async function generateWorkoutBlueprintV4WithOpenAI(
   profileData: any,
   targetDuration: number
 ): Promise<V4Blueprint> {
+  const aiConfig = getAIClient();
+  console.log(`[V4] Using ${aiConfig.provider} for generation`);
   console.log("[V4] Starting Step A: Analysis (Blueprint Mode)");
   
   const analysisInput: V4Prompts.V4AnalysisInput = {
@@ -698,8 +741,8 @@ export async function generateWorkoutBlueprintV4WithOpenAI(
     }
   };
 
-  const analysisResponse = await openai.chat.completions.create({
-    model: "gpt-4o",
+  const analysisResponse = await aiConfig.client.chat.completions.create({
+    model: aiConfig.model,
     messages: [
       { role: "system", content: V4Prompts.buildAnalysisSystemPromptV4() },
       { role: "user", content: V4Prompts.buildAnalysisUserPromptV4(analysisInput) }
@@ -744,8 +787,8 @@ export async function generateWorkoutBlueprintV4WithOpenAI(
     candidate_pools: candidatePools,
   };
 
-  const blueprintResponse = await openai.chat.completions.create({
-    model: "gpt-4o",
+  const blueprintResponse = await aiConfig.client.chat.completions.create({
+    model: aiConfig.model,
     messages: [
       { role: "system", content: V4Prompts.buildBlueprintSystemPromptV4() },
       { role: "user", content: V4Prompts.buildBlueprintUserPromptV4(blueprintInput) }
