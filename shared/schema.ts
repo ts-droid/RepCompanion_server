@@ -387,7 +387,15 @@ export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({
   createdAt: true,
   updatedAt: true,
 }).extend({
-  motivationType: z.enum(["fitness", "viktminskning", "rehabilitering", "hälsa_livsstil", "sport"]).optional(),
+  motivationType: z.enum([
+    "fitness",
+    "viktminskning",
+    "rehabilitering",
+    "hälsa_livsstil",
+    "bättre_hälsa",  // iOS sends this
+    "bygga_muskler", // iOS sends this
+    "sport"
+  ]).optional(),
   trainingLevel: z.enum(["nybörjare", "van", "mycket_van", "elit"]).optional(),
 });
 
