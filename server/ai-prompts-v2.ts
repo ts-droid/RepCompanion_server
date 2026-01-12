@@ -298,13 +298,13 @@ Svara nu ENDAST med JSON-objektet enligt den definierade strukturen.`;
 export const AI_CONFIG_V2 = {
   ultrafast: {
     max_tokens: 2500,
-    timeout_ms: 45000,
+    timeout_ms: 120000, // Increased from 45s to 120s to prevent timeouts
     buildSystemPrompt: buildSystemPromptV2Ultrafast,
     buildUserPrompt: buildUserPromptV2Ultrafast,
   },
   compact: {
     max_tokens: 1400,
-    timeout_ms: 40000,
+    timeout_ms: 90000, // Increased from 40s to 90s
     buildSystemPrompt: buildSystemPromptV2Compact,
     buildUserPrompt: buildUserPromptV2Compact,
   },
