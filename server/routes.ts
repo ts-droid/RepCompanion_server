@@ -13,7 +13,7 @@ import { sendMagicLinkEmail } from "./email-service";
 import jwt from "jsonwebtoken";
 import { insertUserProfileSchema, updateUserProfileSchema, insertGymSchema, updateGymSchema, insertEquipmentSchema, insertWorkoutSessionSchema, insertExerciseLogSchema, updateExerciseLogSchema, suggestAlternativeRequestSchema, suggestAlternativeResponseSchema, trackPromoImpressionSchema, trackAffiliateClickSchema, insertNotificationPreferencesSchema, promoIdParamSchema, promoPlacementParamSchema, generateProgramRequestSchema, exercises, exerciseLogs, workoutSessions, programTemplateExercises, type ExerciseLog } from "@shared/schema";
 import { z, ZodError } from "zod";
-import { generateWorkoutProgram, generateWorkoutProgramWithReasoner, generateWorkoutProgramWithVersionSwitch } from "./ai-service";
+import { generateWorkoutProgram, generateWorkoutProgramWithReasoner, generateWorkoutProgramWithVersionSwitch, generateWorkoutBlueprintV4WithOpenAI } from "./ai-service";
 import { recognizeEquipmentFromImage } from "./roboflow-service";
 import { promoService } from "./promo-service";
 import { workoutGenerationService } from "./workout-generation-service";
@@ -2210,6 +2210,181 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
       res.send(csv);
     } catch (error) {
       res.status(500).json({ message: "Failed to export exercises CSV" });
+    }
+  });
+
+  // ========== V4 BLUEPRINT & TIME MODEL ROUTES ==========
+
+  app.post("/api/program/generate-v4", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile) {
+        return res.status(404).json({ message: "Profile not found" });
+      }
+
+      const targetDuration = profile.sessionDuration || 60;
+      const blueprint = await generateWorkoutBlueprintV4WithOpenAI(profile, targetDuration);
+      
+      res.json({ program: blueprint });
+    } catch (error) {
+      console.error("[V4] Generation failed:", error);
+      res.status(500).json({ 
+        message: "V4 Blueprint generation failed",
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
+  app.get("/api/user/time-model", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const timeModel = await storage.getUserTimeModel(userId);
+      res.json(timeModel || {
+        workSecondsPer10Reps: 30,
+        restBetweenSetsSeconds: 90,
+        restBetweenExercisesSeconds: 120,
+        warmupMinutesDefault: 8,
+        cooldownMinutesDefault: 5,
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch time model" });
+    }
+  });
+
+  app.put("/api/user/time-model", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const timeModelSchema = z.object({
+        workSecondsPer10Reps: z.number(),
+        restBetweenSetsSeconds: z.number(),
+        restBetweenExercisesSeconds: z.number(),
+        warmupMinutesDefault: z.number(),
+        cooldownMinutesDefault: z.number(),
+      });
+      
+      const validatedData = timeModelSchema.parse(req.body);
+      
+      // We need to implement upsertUserTimeModel in storage.ts
+      // For now, let's assume it exists or use a raw db call if needed
+      // Actually, let's add it to storage.ts properly.
+      
+      // For this step, I'll use a placeholder and then fix storage.ts
+      const { userTimeModel } = await import("@shared/schema");
+      const [updated] = await db
+        .insert(userTimeModel)
+        .values({
+          userId,
+          ...validatedData,
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [userTimeModel.userId],
+          set: {
+            ...validatedData,
+            updatedAt: new Date(),
+          },
+        })
+        .returning();
+        
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return res.status(400).json({ message: "Validation error", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to update time model" });
+    }
+  });
+
+  // ========== ADMIN ROUTES ==========
+
+  app.get("/api/admin/unmapped-exercises", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const data = await storage.adminGetUnmappedExercises();
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch unmapped exercises" });
+    }
+  });
+
+  app.get("/api/admin/exercises", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const data = await storage.adminGetAllExercises();
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch exercises" });
+    }
+  });
+
+  app.put("/api/admin/exercises/:id", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const updated = await storage.adminUpdateExercise(req.params.id, req.body);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update exercise" });
+    }
+  });
+
+  app.post("/api/admin/exercise-aliases", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const alias = await storage.adminCreateExerciseAlias(req.body);
+      res.json(alias);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create exercise alias" });
+    }
+  });
+
+  app.get("/api/admin/equipment", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const data = await storage.adminGetAllEquipment();
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch equipment" });
+    }
+  });
+
+  app.put("/api/admin/equipment/:id", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const updated = await storage.adminUpdateEquipment(req.params.id, req.body);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update equipment" });
+    }
+  });
+
+  app.post("/api/admin/equipment-aliases", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const alias = await storage.adminCreateEquipmentAlias(req.body);
+      res.json(alias);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to create equipment alias" });
+    }
+  });
+
+  app.get("/api/admin/gyms", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const data = await storage.adminGetAllGyms();
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch gyms" });
+    }
+  });
+
+  app.put("/api/admin/gyms/:id", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const updated = await storage.adminUpdateGym(req.params.id, req.body);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update gym" });
+    }
+  });
+
+  app.get("/api/admin/stats", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const usersCount = await storage.adminGetUsersCount();
+      res.json({ usersCount });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch admin stats" });
     }
   });
 

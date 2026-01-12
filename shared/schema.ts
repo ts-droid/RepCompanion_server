@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, boolean, index, jsonb, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, boolean, index, jsonb, unique, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -116,10 +116,12 @@ export const userEquipment = pgTable("user_equipment", {
   gymId: varchar("gym_id").notNull().references(() => gyms.id, { onDelete: "cascade" }),
   equipmentType: varchar("equipment_type", { length: 100 }).notNull(),
   equipmentName: varchar("equipment_name", { length: 200 }).notNull(),
+  equipmentKey: varchar("equipment_key", { length: 40 }),
   available: boolean("available").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => ({
   userEquipmentUnique: unique().on(table.gymId, table.equipmentName),
+  idxUserEquipmentKey: index("idx_user_equipment_key").on(table.userId, table.gymId, table.equipmentKey),
 }));
 
 // Gym programs - AI-generated workout programs per gym
@@ -219,10 +221,70 @@ export const exerciseStats = pgTable("exercise_stats", {
 
 // ========== EXERCISE & EQUIPMENT CATALOG ==========
 
+// V4 - User custom time model
+export const userTimeModel = pgTable("user_time_model", {
+  userId: text("user_id").primaryKey(),
+  workSecondsPer10Reps: integer("work_seconds_per_10_reps").notNull().default(30),
+  restBetweenSetsSeconds: integer("rest_between_sets_seconds").notNull().default(90),
+  restBetweenExercisesSeconds: integer("rest_between_exercises_seconds").notNull().default(120),
+  warmupMinutesDefault: integer("warmup_minutes_default").notNull().default(8),
+  cooldownMinutesDefault: integer("cooldown_minutes_default").notNull().default(5),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// V4 - Equipment aliases for matching
+export const equipmentAliases = pgTable("equipment_aliases", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  equipmentKey: varchar("equipment_key", { length: 40 }).notNull(),
+  alias: text("alias").notNull(),
+  aliasNorm: text("alias_norm").notNull(),
+  lang: varchar("lang", { length: 10 }).default("en"),
+  source: varchar("source", { length: 20 }).default("seed"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  uxEquipmentAliasesNorm: unique("ux_equipment_aliases_norm").on(table.aliasNorm),
+}));
+
+// V4 - Exercise aliases for matching
+export const exerciseAliases = pgTable("exercise_aliases", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  exerciseId: varchar("exercise_id", { length: 40 }).notNull(),
+  alias: text("alias").notNull(),
+  aliasNorm: text("alias_norm").notNull(),
+  lang: varchar("lang", { length: 10 }).default("en"),
+  source: varchar("source", { length: 20 }).default("seed"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  uxExerciseAliasesNorm: unique("ux_exercise_aliases_norm").on(table.aliasNorm),
+}));
+
+// V4 - Exercise caps for time fitting
+export const exerciseCaps = pgTable("exercise_caps", {
+  exerciseId: varchar("exercise_id", { length: 40 }).primaryKey(),
+  minSets: integer("min_sets").notNull().default(1),
+  maxSets: integer("max_sets").notNull().default(6),
+});
+
+// V4 - Candidate pools for LLM prompts
+export const candidatePools = pgTable("candidate_pools", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  scope: varchar("scope", { length: 10 }).notNull(), // 'global' | 'gym' | 'user'
+  userId: text("user_id"),
+  gymId: text("gym_id"),
+  poolType: varchar("pool_type", { length: 30 }).notNull(), // 'hypertrophy'|'strength'|'sport_hockey'
+  buckets: jsonb("buckets").notNull(), // JSON buckets of exercise_ids
+  hash: varchar("hash", { length: 64 }).notNull(),
+  version: integer("version").notNull().default(1),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  expiresAt: timestamp("expires_at"),
+}, (table) => ({
+  idxCandidatePoolsLookup: index("idx_candidate_pools_lookup").on(table.scope, table.userId, table.gymId, table.poolType),
+}));
+
 // Exercise catalog - master list of all exercises with metadata
 export const exercises = pgTable("exercises", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  exerciseId: varchar("exercise_id", { length: 20 }),
+  exerciseId: varchar("exercise_id", { length: 40 }),
   name: varchar("name", { length: 200 }).notNull().unique(),
   nameEn: varchar("name_en", { length: 200 }),
   description: text("description"),
@@ -245,7 +307,9 @@ export const exercises = pgTable("exercises", {
   trainingLevelPriority: text("training_level_priority").array(),
   equipmentMappingTags: text("equipment_mapping_tags").array(),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => ({
+  uxExercisesExerciseId: unique("ux_exercises_exercise_id").on(table.exerciseId),
+}));
 
 // Unmapped exercises - tracks AI-generated exercises not found in catalog
 export const unmappedExercises = pgTable("unmapped_exercises", {
@@ -263,11 +327,14 @@ export const equipmentCatalog = pgTable("equipment_catalog", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: varchar("name", { length: 200 }).notNull().unique(),
   nameEn: varchar("name_en", { length: 200 }),
+  equipmentKey: varchar("equipment_key", { length: 40 }),
   category: varchar("category", { length: 50 }).notNull(),
   type: varchar("type", { length: 50 }).notNull(),
   description: text("description"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => ({
+  uxEquipmentCatalogEquipmentKey: unique("ux_equipment_catalog_equipment_key").on(table.equipmentKey),
+}));
 
 // ========== MONETIZATION TABLES ==========
 
@@ -536,6 +603,28 @@ export const insertEquipmentCatalogSchema = createInsertSchema(equipmentCatalog)
   createdAt: true,
 });
 
+export const insertUserTimeModelSchema = createInsertSchema(userTimeModel);
+export const insertEquipmentAliasSchema = createInsertSchema(equipmentAliases).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertExerciseAliasSchema = createInsertSchema(exerciseAliases).omit({
+  id: true,
+  createdAt: true,
+});
+export const insertExerciseCapSchema = createInsertSchema(exerciseCaps);
+export const insertCandidatePoolSchema = createInsertSchema(candidatePools).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertUnmappedExerciseSchema = createInsertSchema(unmappedExercises).omit({
+  id: true,
+  createdAt: true,
+  firstSeen: true,
+  lastSeen: true,
+});
+
 export type UserProfile = typeof userProfiles.$inferSelect;
 export type InsertUserProfile = z.infer<typeof insertUserProfileSchema>;
 export type UpdateUserProfile = z.infer<typeof updateUserProfileSchema>;
@@ -595,6 +684,24 @@ export type InsertExercise = z.infer<typeof insertExerciseSchema>;
 
 export type EquipmentCatalog = typeof equipmentCatalog.$inferSelect;
 export type InsertEquipmentCatalog = z.infer<typeof insertEquipmentCatalogSchema>;
+
+export type UserTimeModel = typeof userTimeModel.$inferSelect;
+export type InsertUserTimeModel = z.infer<typeof insertUserTimeModelSchema>;
+
+export type EquipmentAlias = typeof equipmentAliases.$inferSelect;
+export type InsertEquipmentAlias = z.infer<typeof insertEquipmentAliasSchema>;
+
+export type ExerciseAlias = typeof exerciseAliases.$inferSelect;
+export type InsertExerciseAlias = z.infer<typeof insertExerciseAliasSchema>;
+
+export type ExerciseCap = typeof exerciseCaps.$inferSelect;
+export type InsertExerciseCap = z.infer<typeof insertExerciseCapSchema>;
+
+export type CandidatePool = typeof candidatePools.$inferSelect;
+export type InsertCandidatePool = z.infer<typeof insertCandidatePoolSchema>;
+
+export type UnmappedExercise = typeof unmappedExercises.$inferSelect;
+export type InsertUnmappedExercise = typeof unmappedExercises.$inferInsert;
 
 // ========== HEALTH DATA INTEGRATION (Vital API) ==========
 

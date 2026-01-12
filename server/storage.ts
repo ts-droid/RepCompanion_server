@@ -147,6 +147,11 @@ export interface IStorage {
   updateLastCompletedTemplate(userId: string, templateId: string): Promise<void>;
   getTemplatesWithMetadata(userId: string): Promise<Array<{ template: ProgramTemplate; exerciseCount: number; isNext: boolean }>>;
   incrementProgramGeneration(userId: string): Promise<void>;
+  
+  // V4 specific operations
+  getUserTimeModel(userId: string): Promise<import("@shared/schema").UserTimeModel | undefined>;
+  getExercisesByIds(ids: string[]): Promise<any[]>;
+  getCandidatePools(userId: string, gymId?: string): Promise<import("@shared/schema").CandidatePool[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1395,6 +1400,97 @@ export class DatabaseStorage implements IStorage {
     d.setDate(diff);
     d.setHours(0, 0, 0, 0);
     return d;
+  }
+
+  // ========== V4 specific operations ==========
+
+  async getUserTimeModel(userId: string): Promise<import("@shared/schema").UserTimeModel | undefined> {
+    const { userTimeModel } = await import("@shared/schema");
+    const [model] = await db
+      .select()
+      .from(userTimeModel)
+      .where(eq(userTimeModel.userId, userId));
+    return model;
+  }
+
+  async getExercisesByIds(ids: string[]): Promise<any[]> {
+    const { exercises } = await import("@shared/schema");
+    return await db
+      .select()
+      .from(exercises)
+      .where(inArray(exercises.exerciseId, ids));
+  }
+
+  async getCandidatePools(userId: string, gymId?: string): Promise<import("@shared/schema").CandidatePool[]> {
+    const { candidatePools } = await import("@shared/schema");
+    return await db
+      .select()
+      .from(candidatePools)
+      .where(
+        or(
+          eq(candidatePools.scope, 'global'),
+          and(eq(candidatePools.scope, 'user'), eq(candidatePools.userId, userId)),
+          gymId ? and(eq(candidatePools.scope, 'gym'), eq(candidatePools.gymId, gymId)) : undefined
+        )
+      );
+  }
+
+  // ========== Admin operations ==========
+
+  async adminGetUnmappedExercises(): Promise<import("@shared/schema").UnmappedExercise[]> {
+    const { unmappedExercises } = await import("@shared/schema");
+    return await db.select().from(unmappedExercises).orderBy(desc(unmappedExercises.count));
+  }
+
+  async adminGetAllExercises(): Promise<import("@shared/schema").Exercise[]> {
+    const { exercises } = await import("@shared/schema");
+    return await db.select().from(exercises).orderBy(exercises.name);
+  }
+
+  async adminUpdateExercise(id: string, data: Partial<import("@shared/schema").Exercise>): Promise<import("@shared/schema").Exercise> {
+    const { exercises } = await import("@shared/schema");
+    const [updated] = await db.update(exercises).set(data).where(eq(exercises.id, id)).returning();
+    return updated;
+  }
+
+  async adminCreateExerciseAlias(data: import("@shared/schema").InsertExerciseAlias): Promise<import("@shared/schema").ExerciseAlias> {
+    const { exerciseAliases } = await import("@shared/schema");
+    const [alias] = await db.insert(exerciseAliases).values(data).returning();
+    return alias;
+  }
+
+  async adminGetAllEquipment(): Promise<import("@shared/schema").EquipmentCatalog[]> {
+    const { equipmentCatalog } = await import("@shared/schema");
+    return await db.select().from(equipmentCatalog).orderBy(equipmentCatalog.name);
+  }
+
+  async adminUpdateEquipment(id: string, data: Partial<import("@shared/schema").EquipmentCatalog>): Promise<import("@shared/schema").EquipmentCatalog> {
+    const { equipmentCatalog } = await import("@shared/schema");
+    const [updated] = await db.update(equipmentCatalog).set(data).where(eq(equipmentCatalog.id, id)).returning();
+    return updated;
+  }
+
+  async adminCreateEquipmentAlias(data: import("@shared/schema").InsertEquipmentAlias): Promise<import("@shared/schema").EquipmentAlias> {
+    const { equipmentAliases } = await import("@shared/schema");
+    const [alias] = await db.insert(equipmentAliases).values(data).returning();
+    return alias;
+  }
+
+  async adminGetAllGyms(): Promise<import("@shared/schema").Gym[]> {
+    const { gyms } = await import("@shared/schema");
+    return await db.select().from(gyms).orderBy(gyms.name);
+  }
+
+  async adminUpdateGym(id: string, data: Partial<import("@shared/schema").Gym>): Promise<import("@shared/schema").Gym> {
+    const { gyms } = await import("@shared/schema");
+    const [updated] = await db.update(gyms).set(data).where(eq(gyms.id, id)).returning();
+    return updated;
+  }
+
+  async adminGetUsersCount(): Promise<number> {
+    const { users } = await import("@shared/schema");
+    const result = await db.select({ count: sql<number>`count(*)` }).from(users);
+    return Number(result[0].count);
   }
 }
 

@@ -1,0 +1,394 @@
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { ArrowLeft, Search, Plus, Edit, Trash2, Check, RefreshCw, AlertCircle, Database, Users, Dumbbell, MapPin } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import type { Exercise, EquipmentCatalog, Gym, UnmappedExercise } from "@shared/schema";
+import { useLocation } from "wouter";
+import "@/admin.css";
+
+export default function AdminDashboard() {
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState("overview");
+  const [searchTerm, setSearchTerm] = useState("");
+
+  // Editing state
+  const [editingEx, setEditingEx] = useState<Exercise | null>(null);
+  const [mappingUnmapped, setMappingUnmapped] = useState<UnmappedExercise | null>(null);
+  const [newAlias, setNewAlias] = useState("");
+
+  // Queries
+  const { data: stats } = useQuery<{ usersCount: number }>({
+    queryKey: ["/api/admin/stats"],
+  });
+
+  const { data: unmapped } = useQuery<UnmappedExercise[]>({
+    queryKey: ["/api/admin/unmapped-exercises"],
+  });
+
+  const { data: exercises } = useQuery<Exercise[]>({
+    queryKey: ["/api/admin/exercises"],
+  });
+
+  const { data: equipment } = useQuery<EquipmentCatalog[]>({
+    queryKey: ["/api/admin/equipment"],
+  });
+
+  const { data: gyms } = useQuery<Gym[]>({
+    queryKey: ["/api/admin/gyms"],
+  });
+
+  // Mutations
+  const updateExerciseMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<Exercise> }) => {
+      const res = await apiRequest("PUT", `/api/admin/exercises/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/exercises"] });
+      setEditingEx(null);
+      toast({ title: "Övning uppdaterad" });
+    },
+  });
+
+  const createAliasMutation = useMutation({
+    mutationFn: async (data: { exerciseId: string; alias: string; lang: string }) => {
+      const res = await apiRequest("POST", "/api/admin/exercise-aliases", {
+        ...data,
+        aliasNorm: data.alias.toLowerCase().trim(),
+        source: 'admin'
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/unmapped-exercises"] });
+      setMappingUnmapped(null);
+      setNewAlias("");
+      toast({ title: "Alias skapat" });
+    },
+  });
+
+  // Filtering
+  const filteredExercises = exercises?.filter(ex => 
+    ex.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    ex.nameEn?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <div className="min-h-screen bg-background p-4 md:p-8">
+      <div className="max-w-7xl mx-auto space-y-8">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={() => setLocation("/")}>
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold admin-header">Admin Dashboard</h1>
+            <p className="text-muted-foreground">Hantera RepCompanion databas och system</p>
+          </div>
+        </div>
+
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6 animate-admin-fade">
+          <TabsList className="grid grid-cols-2 md:grid-cols-5 h-auto gap-2 p-1 border rounded-xl glass-panel">
+            <TabsTrigger value="overview" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all duration-300">Översikt</TabsTrigger>
+            <TabsTrigger value="unmapped" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all duration-300 relative">
+              Omatchade
+              {unmapped && unmapped.length > 0 && (
+                <Badge variant="destructive" className="ml-2 absolute -top-2 -right-2 text-[10px] h-5 w-5 p-0 flex items-center justify-center rounded-full shadow-lg border-2 border-background animate-pulse">
+                  {unmapped.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="exercises" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all duration-300">Övningar</TabsTrigger>
+            <TabsTrigger value="equipment" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all duration-300">Utrustning</TabsTrigger>
+            <TabsTrigger value="gyms" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all duration-300">Gym</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview" className="animate-admin-fade delay-1">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card className="admin-card stat-card-gradient">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Totalt antal användare</CardTitle>
+                  <Users className="h-4 w-4 text-primary" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold leading-tight tabular-nums">{stats?.usersCount || 0}</div>
+                  <p className="text-xs text-muted-foreground mt-1">+12% denna vecka</p>
+                </CardContent>
+              </Card>
+              <Card className="admin-card stat-card-gradient">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Övningar i katalog</CardTitle>
+                  <Database className="h-4 w-4 text-primary" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold leading-tight tabular-nums">{exercises?.length || 0}</div>
+                  <p className="text-xs text-muted-foreground mt-1">Växande katalog</p>
+                </CardContent>
+              </Card>
+              <Card className="admin-card stat-card-gradient border-destructive/20 bg-destructive/5">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Väntande matchningar</CardTitle>
+                  <AlertCircle className="h-4 w-4 text-destructive" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-destructive leading-tight tabular-nums">{unmapped?.length || 0}</div>
+                  <p className="text-xs text-muted-foreground mt-1">Kräver uppmärksamhet</p>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="unmapped" className="animate-admin-fade">
+            <Card className="admin-card overflow-hidden">
+              <CardHeader className="bg-muted/30 border-b">
+                <CardTitle className="flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5 text-destructive" />
+                  Omatchade övningar
+                </CardTitle>
+                <CardDescription>Övningar som AI:n föreslagit men som saknar koppling i databasen</CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader className="bg-muted/20">
+                    <TableRow>
+                      <TableHead>AI Namn</TableHead>
+                      <TableHead>Antal träffar</TableHead>
+                      <TableHead>Senast sedd</TableHead>
+                      <TableHead className="text-right">Åtgärd</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {unmapped?.map((item) => (
+                      <TableRow key={item.id} className="admin-table-row">
+                        <TableCell className="font-semibold">{item.aiName}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="bg-background">{item.count} ggr</Badge>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-sm">{new Date(item.lastSeen).toLocaleDateString()}</TableCell>
+                        <TableCell className="text-right">
+                          <Button size="sm" onClick={() => setMappingUnmapped(item)} className="hover-elevate">
+                            <Check className="w-4 h-4 mr-2" /> Matcha
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {(!unmapped || unmapped.length === 0) && (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center py-12">
+                          <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                            <Check className="w-8 h-8 text-primary" />
+                            <p>Inga omatchade övningar just nu!</p>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="exercises" className="animate-admin-fade">
+            <div className="space-y-4">
+              <div className="flex justify-between items-center gap-4 bg-muted/20 p-4 rounded-xl border glass-panel">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input 
+                    placeholder="Sök övningar..." 
+                    className="pl-9 bg-background border-none shadow-inner"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+                <Button className="hover-elevate shadow-lg shadow-primary/20">
+                  <Plus className="w-4 h-4 mr-2" /> Ny övning
+                </Button>
+              </div>
+
+              <Card className="admin-card overflow-hidden">
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader className="bg-muted/30">
+                      <TableRow>
+                        <TableHead className="w-[30%]">Namn (SV)</TableHead>
+                        <TableHead className="w-[30%]">Namn (EN)</TableHead>
+                        <TableHead>Kategori</TableHead>
+                        <TableHead>V4 ID</TableHead>
+                        <TableHead className="text-right">Redigera</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredExercises?.slice(0, 50).map((ex) => (
+                        <TableRow key={ex.id} className="admin-table-row">
+                          <TableCell className="font-semibold">{ex.name}</TableCell>
+                          <TableCell>{ex.nameEn}</TableCell>
+                          <TableCell><Badge variant="secondary" className="font-normal">{ex.category}</Badge></TableCell>
+                          <TableCell className="text-[10px] font-mono whitespace-nowrap overflow-hidden text-ellipsis max-w-[100px] bg-muted/50 px-2 py-1 rounded">
+                            {ex.exerciseId}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button variant="ghost" size="icon" onClick={() => setEditingEx(ex)} className="hover:bg-primary/10 hover:text-primary transition-colors">
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="equipment" className="animate-admin-fade">
+             <Card className="admin-card overflow-hidden">
+              <CardHeader className="bg-muted/30 border-b">
+                <CardTitle className="flex items-center gap-2">
+                  <Dumbbell className="w-5 h-5 text-primary" />
+                  Utrustningskatalog
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader className="bg-muted/20">
+                    <TableRow>
+                      <TableHead>Namn</TableHead>
+                      <TableHead>Kategori</TableHead>
+                      <TableHead>Key</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {equipment?.map((eq) => (
+                      <TableRow key={eq.id} className="admin-table-row">
+                        <TableCell className="font-semibold">{eq.name}</TableCell>
+                        <TableCell><Badge variant="outline">{eq.category}</Badge></TableCell>
+                        <TableCell className="text-xs font-mono">{eq.equipmentKey}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="gyms" className="animate-admin-fade">
+             <Card className="admin-card overflow-hidden">
+              <CardHeader className="bg-muted/30 border-b">
+                <CardTitle className="flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-primary" />
+                  Alla registrerade gym
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader className="bg-muted/20">
+                    <TableRow>
+                      <TableHead>Namn</TableHead>
+                      <TableHead>Plats</TableHead>
+                      <TableHead>Användare ID</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {gyms?.map((gym) => (
+                      <TableRow key={gym.id} className="admin-table-row">
+                        <TableCell className="font-semibold">{gym.name}</TableCell>
+                        <TableCell>{gym.location || "Ej angivet"}</TableCell>
+                        <TableCell className="text-[10px] font-mono">{gym.userId}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
+
+      {/* Matching Dialog */}
+      <Dialog open={!!mappingUnmapped} onOpenChange={() => setMappingUnmapped(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Matcha AI-övning</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="p-3 bg-muted rounded-lg">
+              <p className="text-sm font-medium">AI föreslog:</p>
+              <p className="text-lg">{mappingUnmapped?.aiName}</p>
+            </div>
+            
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Välj befintlig övning att koppla till:</label>
+              <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" 
+                onChange={(e) => setNewAlias(e.target.value)}
+                value={newAlias}
+              >
+                <option value="">Välj övning...</option>
+                {exercises?.map(ex => (
+                  <option key={ex.id} value={ex.exerciseId || ""}>{ex.name} ({ex.exerciseId})</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMappingUnmapped(null)}>Avbryt</Button>
+            <Button 
+              disabled={!newAlias || createAliasMutation.isPending}
+              onClick={() => mappingUnmapped && createAliasMutation.mutate({ 
+                exerciseId: newAlias, 
+                alias: mappingUnmapped.aiName,
+                lang: 'en' 
+              })}
+            >
+              Skapa Alias & Koppla
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Editing Dialog */}
+      {editingEx && (
+        <Dialog open={!!editingEx} onOpenChange={() => setEditingEx(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Redigera övning</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <label className="text-sm font-medium">Namn (SV)</label>
+                <Input defaultValue={editingEx.name} id="edit-name" />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Namn (EN)</label>
+                <Input defaultValue={editingEx.nameEn || ""} id="edit-name-en" />
+              </div>
+              <div>
+                <label className="text-sm font-medium">V4 Exercise ID</label>
+                <Input defaultValue={editingEx.exerciseId || ""} id="edit-v4-id" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditingEx(null)}>Avbryt</Button>
+              <Button onClick={() => {
+                const name = (document.getElementById("edit-name") as HTMLInputElement).value;
+                const nameEn = (document.getElementById("edit-name-en") as HTMLInputElement).value;
+                const exerciseId = (document.getElementById("edit-v4-id") as HTMLInputElement).value;
+                updateExerciseMutation.mutate({ 
+                  id: editingEx.id, 
+                  data: { name, nameEn, exerciseId } 
+                });
+              }}>Spara ändringar</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  );
+}

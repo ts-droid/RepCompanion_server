@@ -21,6 +21,7 @@ import ActiveSession from "@/pages/ActiveSession";
 import SessionComplete from "@/pages/SessionComplete";
 import SessionDetails from "@/pages/SessionDetails";
 import Progress from "@/pages/Progress";
+import AdminDashboard from "@/pages/AdminDashboard";
 import NotFound from "@/pages/not-found";
 
 function LoadingSpinner({ message = "Laddar..." }: { message?: string }) {
@@ -94,6 +95,7 @@ function Router() {
           <Route path="/session/complete">{() => <ProtectedRoute component={SessionComplete} />}</Route>
           <Route path="/session/:sessionId">{(params) => <ProtectedRoute component={SessionDetails} params={params} />}</Route>
           <Route path="/progress">{() => <ProtectedRoute component={Progress} />}</Route>
+          <Route path="/admin">{() => <ProtectedRoute component={AdminDashboard} />}</Route>
           <Route path="/onboarding" component={Onboarding} />
         </>
       )}
