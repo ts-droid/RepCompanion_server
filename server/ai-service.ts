@@ -16,7 +16,7 @@ const openai = new OpenAI({
 // Version control: AI_PROMPT_VERSION env variable controls which prompt system to use
 // Default: 'v2' (ultrafast prompts with auto-1RM, 900 tokens, 120s timeout)
 // Set to 'v1' to use legacy system with 16000 max_tokens
-const AI_PROMPT_VERSION = process.env.AI_PROMPT_VERSION || 'v2';
+const AI_PROMPT_VERSION = process.env.AI_PROMPT_VERSION || 'v4';
 console.log(`[AI VERSION] Using prompt version: ${AI_PROMPT_VERSION}`);
 
 const exerciseSchema = z.object({
