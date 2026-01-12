@@ -3,6 +3,9 @@ import { z } from "zod";
 import OpenAI from "openai";
 import { AI_CONFIG_V2, type PromptContextV2 } from "./ai-prompts-v2";
 import { AI_CONFIG_V3, type PromptContextV3 } from "./ai-prompts-v3";
+import * as V4Prompts from "./prompts/v4";
+import { estimateSessionSeconds, fitProgramSessions } from "./utils/timeFitting";
+import { storage } from "./storage";
 
 // OpenAI client using Replit AI Integrations (no API key needed, billed to credits)
 const openai = new OpenAI({
@@ -149,6 +152,51 @@ const workoutProgramSchemaV2 = z.object({
 });
 
 export type WorkoutProgramV2 = z.infer<typeof workoutProgramSchemaV2>;
+
+// Schema for V4 Analysis Step A
+const v4AnalysisSchema = z.object({
+  analysis_summary: z.string(),
+  focus_distribution: z.object({
+    strength: z.number(),
+    hypertrophy: z.number(),
+    endurance: z.number(),
+    cardio: z.number(),
+  }),
+  recommendations: z.object({
+    sets_per_session_min: z.number(),
+    sets_per_session_max: z.number(),
+    weekly_volume_sets_min: z.number(),
+    weekly_volume_sets_max: z.number(),
+  }),
+});
+
+export type V4Analysis = z.infer<typeof v4AnalysisSchema>;
+
+// Schema for V4 Blueprint Step B (IDs-only)
+const v4BlueprintSchema = z.object({
+  program_name: z.string(),
+  duration_weeks: z.number(),
+  sessions: z.array(z.object({
+    session_index: z.number(),
+    weekday: z.string(),
+    name: z.string(),
+    blocks: z.array(z.object({
+      type: z.enum(["warmup", "main", "accessory", "cardio", "cooldown"]),
+      exercises: z.array(z.object({
+        exercise_id: z.string(),
+        sets: z.number(),
+        reps: z.string(),
+        rest_seconds: z.number().nullable(),
+        load_type: z.string(),
+        load_value: z.number(),
+        priority: z.number().min(1).max(3),
+        notes: z.string().nullable(),
+      }))
+    }))
+  }))
+});
+
+export type V4Blueprint = z.infer<typeof v4BlueprintSchema>;
 
 /**
  * Validate that AI-generated session durations match user's target (V2)
@@ -425,6 +473,310 @@ async function generateWorkoutProgramWithDeepSeek(
  * Uses simplified JSON structure for faster generation
  * EXPORTED for use with version switcher
  */
+// Hydrate V4 Blueprint into DeepSeek format for frontend compatibility
+async function hydrateV4Blueprint(
+  blueprint: V4Blueprint, 
+  profile: any,
+  timeModel: any
+): Promise<DeepSeekWorkoutProgram> {
+  const exerciseIds = new Set<string>();
+  blueprint.sessions.forEach(s => s.blocks.forEach(b => b.exercises.forEach(e => exerciseIds.add(e.exercise_id))));
+  
+  const catalogExercises = await storage.getExercisesByIds(Array.from(exerciseIds));
+  const catalogMap = new Map(catalogExercises.map(ex => [ex.exerciseId, ex]));
+
+  const weeklySessions = blueprint.sessions.map(s => {
+    const warmup: any[] = [];
+    const main_work: any[] = [];
+    const cooldown: any[] = [];
+
+    s.blocks.forEach(block => {
+      block.exercises.forEach(ex => {
+        const cat = catalogMap.get(ex.exercise_id);
+        const hydratedEx = {
+          exercise_name: cat?.nameEn || cat?.name || ex.exercise_id,
+          sets: ex.sets,
+          reps: ex.reps,
+          rest_seconds: ex.rest_seconds ?? timeModel.restBetweenSetsSeconds,
+          tempo: "3-0-1-0", // Default tempo
+          suggested_weight_kg: null,
+          suggested_weight_notes: null,
+          target_muscles: cat?.primaryMuscles || [],
+          required_equipment: cat?.requiredEquipment || [],
+          technique_cues: cat?.description ? [cat.description] : [],
+        };
+
+        if (block.type === "warmup") {
+          warmup.push({
+            exercise_name: hydratedEx.exercise_name,
+            sets: ex.sets,
+            reps_or_duration: ex.reps,
+            notes: ex.notes || "",
+          });
+        } else if (block.type === "cooldown") {
+          cooldown.push({
+            exercise_name: hydratedEx.exercise_name,
+            duration_or_reps: ex.reps,
+            notes: ex.notes || "",
+          });
+        } else {
+          main_work.push({
+            ...hydratedEx,
+            tempo: "3-0-1-0",
+            technique_cues: hydratedEx.technique_cues,
+          });
+        }
+      });
+    });
+
+    const sessionDurationSeconds = estimateSessionSeconds(s as any, timeModel);
+
+    return {
+      session_number: s.session_index,
+      weekday: s.weekday,
+      session_name: s.name,
+      session_type: "strength",
+      estimated_duration_minutes: Math.ceil(sessionDurationSeconds / 60),
+      warmup,
+      main_work,
+      cooldown,
+    };
+  });
+
+  return {
+    user_profile: {
+      gender: profile.sex || "not_specified",
+      age: profile.age || 30,
+      weight_kg: profile.bodyWeight || 75,
+      height_cm: profile.height || 175,
+      training_level: profile.trainingLevel || "intermediate",
+      main_goal: profile.trainingGoals || "general_fitness",
+      distribution: {
+        strength_percent: profile.goalStrength || 25,
+        hypertrophy_percent: profile.goalVolume || 25,
+        endurance_percent: profile.goalEndurance || 25,
+        cardio_percent: profile.goalCardio || 25,
+      },
+      sessions_per_week: profile.sessionsPerWeek || 3,
+      session_length_minutes: blueprint.sessions[0]?.blocks.length ? 60 : 60, // Fallback
+      available_equipment: (profile.equipmentList || "").split(",").filter(Boolean),
+    },
+    program_overview: {
+      week_focus_summary: `${blueprint.program_name} - V4 Generated`,
+      expected_difficulty: "Moderate",
+      notes_on_progression: "Progress by increasing weight or reps within the prescribed ranges.",
+    },
+    weekly_sessions: weeklySessions,
+  };
+}
+
+export async function generateWorkoutProgramV4WithOpenAI(
+  profileData: any,
+  targetDuration: number
+): Promise<DeepSeekWorkoutProgram> {
+  console.log("[V4] Starting Step A: Analysis");
+  
+  const analysisInput: V4Prompts.V4AnalysisInput = {
+    user: {
+      age: profileData.age,
+      sex: profileData.sex,
+      weight_kg: profileData.bodyWeight,
+      height_cm: profileData.height,
+      training_level: profileData.trainingLevel,
+      primary_goal: profileData.trainingGoals,
+      sport: profileData.specificSport,
+    }
+  };
+
+  const analysisResponse = await openai.chat.completions.create({
+    model: "gpt-4o", // Use gpt-4o for complex analysis
+    messages: [
+      { role: "system", content: V4Prompts.buildAnalysisSystemPromptV4() },
+      { role: "user", content: V4Prompts.buildAnalysisUserPromptV4(analysisInput) }
+    ],
+    response_format: { type: "json_object" }
+  });
+
+  const analysis = v4AnalysisSchema.parse(JSON.parse(analysisResponse.choices[0].message.content || "{}"));
+  console.log("[V4] Analysis complete:", analysis.analysis_summary);
+
+  console.log("[V4] Starting Step B: Blueprint");
+  
+  const timeModel = await storage.getUserTimeModel(profileData.userId) || {
+    workSecondsPer10Reps: 30,
+    restBetweenSetsSeconds: 90,
+    restBetweenExercisesSeconds: 120,
+    warmupMinutesDefault: 8,
+    cooldownMinutesDefault: 5,
+  };
+
+  // Build candidate pools - for now we use a simplified mock or fetch from DB
+  // In a real scenario, we'd have a sophisticated pool builder
+  const pools = await storage.getCandidatePools(profileData.userId);
+  const candidatePools: V4Prompts.V4CandidatePools = {};
+  pools.forEach(p => {
+    Object.assign(candidatePools, p.buckets);
+  });
+
+  // If no pools found, we might need a fallback or error
+  if (Object.keys(candidatePools).length === 0) {
+    console.warn("[V4] No candidate pools found, using minimal fallback");
+    // Minimal fallback logic could go here
+  }
+
+  const blueprintInput: V4Prompts.V4BlueprintInput = {
+    schedule: {
+      sessions_per_week: profileData.sessionsPerWeek || 3,
+      target_minutes: targetDuration,
+      allowed_duration_minutes: { min: targetDuration - 10, max: targetDuration + 10 },
+      weekdays: (profileData.weekdayList || "Monday,Wednesday,Friday").split(","),
+    },
+    focus_distribution: analysis.focus_distribution,
+    sport: profileData.specificSport,
+    time_model: {
+      work_seconds_per_10_reps: timeModel.workSecondsPer10Reps,
+      rest_between_sets_seconds: timeModel.restBetweenSetsSeconds,
+      rest_between_exercises_seconds: timeModel.restBetweenExercisesSeconds,
+      warmup_minutes_default: timeModel.warmupMinutesDefault || 8,
+      cooldown_minutes_default: timeModel.cooldownMinutesDefault || 5,
+    },
+    candidate_pools: candidatePools,
+  };
+
+  const blueprintResponse = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      { role: "system", content: V4Prompts.buildBlueprintSystemPromptV4() },
+      { role: "user", content: V4Prompts.buildBlueprintUserPromptV4(blueprintInput) }
+    ],
+    response_format: { type: "json_object" }
+  });
+
+  const blueprint = v4BlueprintSchema.parse(JSON.parse(blueprintResponse.choices[0].message.content || "{}"));
+  console.log("[V4] Blueprint complete:", blueprint.program_name);
+
+  console.log("[V4] Starting Step C: Hydration & Time Fitting");
+  
+  // Apply deterministic time fitting across all sessions
+  const fitResults = fitProgramSessions({
+    sessions: blueprint.sessions as any,
+    cfg: {
+      workSecondsPer10Reps: timeModel.workSecondsPer10Reps,
+      restBetweenSetsSeconds: timeModel.restBetweenSetsSeconds,
+      restBetweenExercisesSeconds: timeModel.restBetweenExercisesSeconds,
+      warmupMinutesDefault: timeModel.warmupMinutesDefault,
+      cooldownMinutesDefault: timeModel.cooldownMinutesDefault,
+    },
+    targetMinutes: targetDuration,
+    allowedMinMinutes: targetDuration - 5,
+    allowedMaxMinutes: targetDuration + 5,
+  });
+
+  blueprint.sessions = fitResults.sessions as any;
+  
+  const hydrated = await hydrateV4Blueprint(blueprint, profileData, timeModel);
+  console.log("[V4] Hydration complete");
+
+  return hydrated;
+}
+
+export async function generateWorkoutBlueprintV4WithOpenAI(
+  profileData: any,
+  targetDuration: number
+): Promise<V4Blueprint> {
+  console.log("[V4] Starting Step A: Analysis (Blueprint Mode)");
+  
+  const analysisInput: V4Prompts.V4AnalysisInput = {
+    user: {
+      age: profileData.age,
+      sex: profileData.sex,
+      weight_kg: profileData.bodyWeight,
+      height_cm: profileData.height,
+      training_level: profileData.trainingLevel,
+      primary_goal: profileData.trainingGoals,
+      sport: profileData.specificSport,
+    }
+  };
+
+  const analysisResponse = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      { role: "system", content: V4Prompts.buildAnalysisSystemPromptV4() },
+      { role: "user", content: V4Prompts.buildAnalysisUserPromptV4(analysisInput) }
+    ],
+    response_format: { type: "json_object" }
+  });
+
+  const analysis = v4AnalysisSchema.parse(JSON.parse(analysisResponse.choices[0].message.content || "{}"));
+
+  console.log("[V4] Starting Step B: Blueprint");
+  
+  const timeModel = await storage.getUserTimeModel(profileData.userId) || {
+    workSecondsPer10Reps: 30,
+    restBetweenSetsSeconds: 90,
+    restBetweenExercisesSeconds: 120,
+    warmupMinutesDefault: 8,
+    cooldownMinutesDefault: 5,
+  };
+
+  const pools = await storage.getCandidatePools(profileData.userId);
+  const candidatePools: V4Prompts.V4CandidatePools = {};
+  pools.forEach(p => {
+    Object.assign(candidatePools, p.buckets);
+  });
+
+  const blueprintInput: V4Prompts.V4BlueprintInput = {
+    schedule: {
+      sessions_per_week: profileData.sessionsPerWeek || 3,
+      target_minutes: targetDuration,
+      allowed_duration_minutes: { min: targetDuration - 10, max: targetDuration + 10 },
+      weekdays: (profileData.weekdayList || "Monday,Wednesday,Friday").split(","),
+    },
+    focus_distribution: analysis.focus_distribution,
+    sport: profileData.specificSport,
+    time_model: {
+      work_seconds_per_10_reps: timeModel.workSecondsPer10Reps,
+      rest_between_sets_seconds: timeModel.restBetweenSetsSeconds,
+      rest_between_exercises_seconds: timeModel.restBetweenExercisesSeconds,
+      warmup_minutes_default: timeModel.warmupMinutesDefault || 8,
+      cooldown_minutes_default: timeModel.cooldownMinutesDefault || 5,
+    },
+    candidate_pools: candidatePools,
+  };
+
+  const blueprintResponse = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      { role: "system", content: V4Prompts.buildBlueprintSystemPromptV4() },
+      { role: "user", content: V4Prompts.buildBlueprintUserPromptV4(blueprintInput) }
+    ],
+    response_format: { type: "json_object" }
+  });
+
+  const blueprint = v4BlueprintSchema.parse(JSON.parse(blueprintResponse.choices[0].message.content || "{}"));
+
+  console.log("[V4] Starting Step C: Time Fitting (Blueprint Mode)");
+  
+  const fitResults = fitProgramSessions({
+    sessions: blueprint.sessions as any,
+    cfg: {
+      workSecondsPer10Reps: timeModel.workSecondsPer10Reps,
+      restBetweenSetsSeconds: timeModel.restBetweenSetsSeconds,
+      restBetweenExercisesSeconds: timeModel.restBetweenExercisesSeconds,
+      warmupMinutesDefault: timeModel.warmupMinutesDefault,
+      cooldownMinutesDefault: timeModel.cooldownMinutesDefault,
+    },
+    targetMinutes: targetDuration,
+    allowedMinMinutes: targetDuration - 5,
+    allowedMaxMinutes: targetDuration + 5,
+  });
+
+  blueprint.sessions = fitResults.sessions as any;
+  
+  console.log("[V4] Blueprint generation complete");
+  return blueprint;
+}
+
 export async function generateWorkoutProgramV2WithOpenAI(
   context: PromptContextV2,
   mode: 'ultrafast' | 'compact' = 'ultrafast'
@@ -970,8 +1322,15 @@ export async function generateWorkoutProgramWithVersionSwitch(
 ): Promise<DeepSeekWorkoutProgram> {
   console.log(`[VERSION SWITCHER] Using AI prompt version: ${AI_PROMPT_VERSION}`);
   
-  if (AI_PROMPT_VERSION === 'v2' || AI_PROMPT_VERSION === 'v3') {
+  if (AI_PROMPT_VERSION === 'v2' || AI_PROMPT_VERSION === 'v3' || AI_PROMPT_VERSION === 'v4') {
     const versionLabel = AI_PROMPT_VERSION.toUpperCase();
+    
+    if (AI_PROMPT_VERSION === 'v4') {
+      console.log(`[V4] Generating program with IDs-only blueprint and hydration`);
+      const v4Program = await generateWorkoutProgramV4WithOpenAI(profileData, targetDuration);
+      return v4Program;
+    }
+
     // Comprehensive V2 prerequisites validation
     if (!profileData) {
       console.warn(`[VERSION SWITCHER] V2 requires profile data, falling back to V1`);
