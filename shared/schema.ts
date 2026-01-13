@@ -458,15 +458,20 @@ export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({
   updatedAt: true,
 }).extend({
   motivationType: z.enum([
+    "build_muscle",
+    "better_health",
+    "sport",
+    "mobility",
+    "rehabilitation",
+    // Legacy Swedish keys for backward compatibility
     "fitness",
     "viktminskning",
-    "rehabilitering",
     "hälsa_livsstil",
-    "bättre_hälsa",  // iOS sends this
-    "bygga_muskler", // iOS sends this
-    "sport"
+    "bättre_hälsa",
+    "bygga_muskler",
+    "bli_rörligare"
   ]).optional(),
-  trainingLevel: z.enum(["nybörjare", "van", "mycket_van", "elit"]).optional(),
+  trainingLevel: z.enum(["beginner", "intermediate", "advanced", "elite", "nybörjare", "van", "mycket_van"]).optional(),
 });
 
 export const updateUserProfileSchema = z.object({
@@ -475,9 +480,9 @@ export const updateUserProfileSchema = z.object({
   avatarEmoji: z.string().max(10).optional(),
   avatarImageUrl: z.string().url().nullable().optional(),
   avatarConfig: z.any().optional(), // Flexible for avatar generator config
-  motivationType: z.enum(["fitness", "viktminskning", "rehabilitering", "hälsa_livsstil", "sport"]).optional(),
+  motivationType: z.enum(["build_muscle", "better_health", "sport", "mobility", "rehabilitation", "fitness", "viktminskning", "hälsa_livsstil"]).optional(),
   trainingGoals: z.string().optional(),
-  trainingLevel: z.enum(["nybörjare", "van", "mycket_van", "elit"]).optional(),
+  trainingLevel: z.enum(["beginner", "intermediate", "advanced", "elite", "nybörjare", "van", "mycket_van"]).optional(),
   specificSport: z.string().nullable().optional(),
   goalStrength: z.number().min(0).max(100).optional(),
   goalVolume: z.number().min(0).max(100).optional(),
