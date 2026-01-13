@@ -40,6 +40,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  app.get("/api/version", (_req, res) => {
+    res.json({ 
+      version: "1.0.1",
+      deployId: "uuid-regex-fix-v2",
+      time: new Date().toISOString()
+    });
+  });
+
   // ========== AUTH ROUTES ==========
   
   app.post("/api/auth/apple", async (req, res) => {
@@ -834,7 +842,7 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
       
       const template = await storage.getProgramTemplate(templateId);
       if (!template) {
-        return res.status(404).json({ message: "Template not found" });
+        return res.status(404).json({ message: "Template not found (via /api/program/:id GET)" });
       }
       
       if (template.userId !== userId) {
