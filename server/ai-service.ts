@@ -653,7 +653,7 @@ export async function generateWorkoutProgramV4WithOpenAI(
 
   // Build candidate pools - for now we use a simplified mock or fetch from DB
   // In a real scenario, we'd have a sophisticated pool builder
-  const pools = await storage.getCandidatePools(profileData.userId);
+  const pools = await storage.getCandidatePools(profileData.userId, profileData.selectedGymId);
   const candidatePools: V4Prompts.V4CandidatePools = {};
   pools.forEach(p => {
     Object.assign(candidatePools, p.buckets);
@@ -762,7 +762,7 @@ export async function generateWorkoutBlueprintV4WithOpenAI(
     cooldownMinutesDefault: 5,
   };
 
-  const pools = await storage.getCandidatePools(profileData.userId);
+  const pools = await storage.getCandidatePools(profileData.userId, profileData.selectedGymId);
   const candidatePools: V4Prompts.V4CandidatePools = {};
   pools.forEach(p => {
     Object.assign(candidatePools, p.buckets);

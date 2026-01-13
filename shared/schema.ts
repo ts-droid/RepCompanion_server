@@ -106,6 +106,9 @@ export const gyms = pgTable("gyms", {
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   name: varchar("name", { length: 200 }).notNull(),
   location: varchar("location", { length: 300 }),
+  latitude: text("latitude"), // Store as string for precision/simplicity in serialization
+  longitude: text("longitude"),
+  isPublic: boolean("is_public").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -500,6 +503,9 @@ export const insertGymSchema = createInsertSchema(gyms).omit({
 export const updateGymSchema = z.object({
   name: z.string().min(1, "Gymnamn krävs"),
   location: z.string().optional(),
+  latitude: z.string().optional().nullable(),
+  longitude: z.string().optional().nullable(),
+  isPublic: z.boolean().optional(),
 });
 
 export const insertEquipmentSchema = createInsertSchema(userEquipment).omit({
