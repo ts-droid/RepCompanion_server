@@ -1,3 +1,4 @@
--- Add latitude and longitude columns to gyms table
+-- Add missing columns to gyms table
 ALTER TABLE gyms ADD COLUMN IF NOT EXISTS latitude TEXT;
 ALTER TABLE gyms ADD COLUMN IF NOT EXISTS longitude TEXT;
+ALTER TABLE gyms ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT false NOT NULL;
