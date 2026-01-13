@@ -816,6 +816,7 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
       const hasTemplates = templates.length > 0;
       res.json({
         status: hasTemplates ? "ready" : "no_program",
+        message: hasTemplates ? "Program ready" : "No program available",
         hasTemplates: hasTemplates,
         templatesCount: templates.length,
         progress: hasTemplates ? 100 : 0
@@ -834,6 +835,7 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
       
       res.json({
         status: hasTemplates ? "ready" : "no_program",
+        message: hasTemplates ? "Program ready" : "No program available",
         hasTemplates: hasTemplates,
         templatesCount: templates.length,
         progress: hasTemplates ? 100 : 0
