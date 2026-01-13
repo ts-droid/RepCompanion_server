@@ -539,7 +539,15 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
       if (error instanceof ZodError) {
         return res.status(400).json({ message: "Validation error", errors: error.errors });
       }
-      res.status(500).json({ message: "Failed to complete onboarding" });
+      console.error("[Onboarding] ❌ Error completing onboarding:", error);
+      if (error instanceof Error) {
+        console.error("[Onboarding] Error message:", error.message);
+        console.error("[Onboarding] Error stack:", error.stack);
+      }
+      res.status(500).json({ 
+        message: "Failed to complete onboarding",
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
   });
 
