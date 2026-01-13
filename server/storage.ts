@@ -72,7 +72,7 @@ export interface IStorage {
   getUserGyms(userId: string): Promise<Gym[]>;
   getSelectedGym(userId: string): Promise<Gym | undefined>;
   setSelectedGym(userId: string, gymId: string): Promise<void>;
-  updateGym(id: string, userId: string, data: { name: string; location?: string }): Promise<Gym>;
+  updateGym(id: string, userId: string, data: { name: string; location?: string; latitude?: string | null; longitude?: string | null; isPublic?: boolean }): Promise<Gym>;
   deleteGym(id: string, userId: string): Promise<void>;
   
   // Equipment operations
@@ -86,6 +86,7 @@ export interface IStorage {
   createGymProgram(program: InsertGymProgram): Promise<GymProgram>;
   getGymProgram(userId: string, gymId: string): Promise<GymProgram | undefined>;
   upsertGymProgram(program: InsertGymProgram): Promise<GymProgram>;
+  getUserGymPrograms(userId: string): Promise<GymProgram[]>;
   clearUserGymPrograms(userId: string): Promise<void>;
   
   // Workout session operations
@@ -315,7 +316,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(userProfiles.userId, userId));
   }
 
-  async updateGym(id: string, userId: string, data: { name: string; location?: string }): Promise<Gym> {
+  async updateGym(id: string, userId: string, data: { name: string; location?: string; latitude?: string | null; longitude?: string | null; isPublic?: boolean }): Promise<Gym> {
     const gym = await this.getGym(id);
     if (!gym || gym.userId !== userId) {
       throw new Error("Gym not found or access denied");
@@ -326,6 +327,9 @@ export class DatabaseStorage implements IStorage {
       .set({
         name: data.name,
         location: data.location,
+        latitude: data.latitude,
+        longitude: data.longitude,
+        isPublic: data.isPublic,
       })
       .where(and(eq(gyms.id, id), eq(gyms.userId, userId)))
       .returning();
@@ -417,6 +421,13 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
     return program;
+  }
+
+  async getUserGymPrograms(userId: string): Promise<GymProgram[]> {
+    return await db
+      .select()
+      .from(gymPrograms)
+      .where(eq(gymPrograms.userId, userId));
   }
 
   async clearUserGymPrograms(userId: string): Promise<void> {

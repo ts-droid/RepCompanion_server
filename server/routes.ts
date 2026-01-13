@@ -17,6 +17,7 @@ import { generateWorkoutProgram, generateWorkoutProgramWithReasoner, generateWor
 import { recognizeEquipmentFromImage } from "./roboflow-service";
 import { promoService } from "./promo-service";
 import { workoutGenerationService } from "./workout-generation-service";
+import { adjustProgramDuration, analyzeMuscleGroupBalance } from "./program-adjustment-service";
 import { vitalService } from "./vital-service";
 import { db } from "./db";
 import { eq, sql, and, gte, lte, desc } from "drizzle-orm";
@@ -199,6 +200,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const { bodyWeight = 75, sex = "man", trainingLevel = "van" } = req.body;
+      
+      const isMale = sex === "man";
+      const isBeginner = trainingLevel === "nybörjare";
+      
+      const benchMultiplier = isMale ? (isBeginner ? 0.6 : 0.9) : (isBeginner ? 0.4 : 0.6);
+      const squatMultiplier = isMale ? (isBeginner ? 0.8 : 1.2) : (isBeginner ? 0.6 : 0.9);
+      const deadliftMultiplier = isMale ? (isBeginner ? 1.0 : 1.4) : (isBeginner ? 0.7 : 1.1);
+      const ohpMultiplier = isMale ? (isBeginner ? 0.4 : 0.6) : (isBeginner ? 0.3 : 0.45);
+      const latpullMultiplier = isMale ? (isBeginner ? 0.5 : 0.7) : (isBeginner ? 0.4 : 0.6);
+
+      res.json({
+        oneRmBench: Math.round(bodyWeight * benchMultiplier),
+        oneRmOhp: Math.round(bodyWeight * ohpMultiplier),
+        oneRmDeadlift: Math.round(bodyWeight * deadliftMultiplier),
+        oneRmSquat: Math.round(bodyWeight * squatMultiplier),
+        oneRmLatpull: Math.round(bodyWeight * latpullMultiplier)
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to suggest 1RM values" });
+    }
+  });
+
+  app.get("/api/profile/muscle-balance", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const analysis = await analyzeMuscleGroupBalance(userId);
+      res.json(analysis);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch muscle balance analysis" });
+    }
+  });
+
   app.post("/api/profile", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
@@ -247,6 +283,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
       
       if (onlyDurationChanged) {
+        try {
+          await adjustProgramDuration(userId, validatedData.sessionDuration!, oldProfile?.selectedGymId || undefined);
+        } catch (error) {
+          console.error("Local duration adjustment failed, will fallback to AI:", error);
+          // If local fails, we just let trainingSettingsChanged stay true and trigger AI
+        }
       }
       
       // Trigger AI regeneration for major changes OR duration changes
@@ -505,6 +547,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/gym-programs", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const programs = await storage.getUserGymPrograms(userId);
+      res.json(programs);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch gym programs" });
+    }
+  });
+
   app.post("/api/gyms", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
@@ -534,7 +586,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/gyms/:id", isAuthenticatedOrDev, async (req: any, res) => {
+  app.patch("/api/gyms/:id([0-9a-fA-F-]{36})", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const validatedData = updateGymSchema.parse(req.body);
@@ -551,7 +603,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/gyms/:id/select", isAuthenticatedOrDev, async (req: any, res) => {
+  app.patch("/api/gyms/:id([0-9a-fA-F-]{36})/select", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       await storage.setSelectedGym(userId, req.params.id);
@@ -564,7 +616,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/gyms/:id", isAuthenticatedOrDev, async (req: any, res) => {
+  app.delete("/api/gyms/:id([0-9a-fA-F-]{36})", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const gymId = req.params.id;
@@ -637,7 +689,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/equipment/:id", isAuthenticatedOrDev, async (req: any, res) => {
+  app.delete("/api/equipment/:id([0-9a-fA-F-]{36})", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const equipment = await storage.getEquipmentById(req.params.id);
@@ -694,7 +746,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ========== GYM PROGRAM ROUTES ==========
   
-  app.get("/api/gym-programs/:gymId", isAuthenticatedOrDev, async (req: any, res) => {
+  app.get("/api/gym-programs/:gymId([0-9a-fA-F-]{36})", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const { gymId } = req.params;
@@ -741,8 +793,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to get next template" });
     }
   });
+  app.get("/api/programs/status", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const templates = await storage.getTemplatesWithMetadata(userId);
+      const hasTemplates = templates.length > 0;
+      res.json({
+        status: hasTemplates ? "ready" : "no_program",
+        hasTemplates: hasTemplates,
+        templatesCount: templates.length,
+        progress: hasTemplates ? 100 : 0
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get program status" });
+    }
+  });
 
-  app.get("/api/program/:id", isAuthenticatedOrDev, async (req: any, res) => {
+  app.get("/api/program/status", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const templates = await storage.getTemplatesWithMetadata(userId);
+      
+      const hasTemplates = templates.length > 0;
+      
+      res.json({
+        status: hasTemplates ? "ready" : "no_program",
+        hasTemplates: hasTemplates,
+        templatesCount: templates.length,
+        progress: hasTemplates ? 100 : 0
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to get program status" });
+    }
+  });
+
+  app.get("/api/program/:id([0-9a-fA-F-]{36})", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const templateId = req.params.id;
@@ -773,7 +858,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Add exercise to template
-  app.post("/api/program/templates/:templateId/exercises", isAuthenticatedOrDev, async (req: any, res) => {
+  app.post("/api/program/templates/:templateId([0-9a-fA-F-]{36})/exercises", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const { templateId } = req.params;
@@ -820,7 +905,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/program/templates/:id", isAuthenticatedOrDev, async (req: any, res) => {
+  app.patch("/api/program/templates/:id([0-9a-fA-F-]{36})", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const templateId = req.params.id;
@@ -858,7 +943,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     dayOfWeek: z.number().int().min(1).max(7).optional(),
   });
 
-  app.patch("/api/program/:id/meta", isAuthenticatedOrDev, async (req: any, res) => {
+  app.patch("/api/program/:id([0-9a-fA-F-]{36})/meta", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const templateId = req.params.id;
@@ -1193,7 +1278,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.get("/api/sessions/:id", isAuthenticatedOrDev, async (req: any, res) => {
+  app.get("/api/sessions/:id([0-9a-fA-F-]{36})", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const session = await storage.getWorkoutSession(req.params.id);
@@ -1212,7 +1297,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.get("/api/sessions/:id/details", isAuthenticatedOrDev, async (req: any, res) => {
+  app.get("/api/sessions/:id([0-9a-fA-F-]{36})/details", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const session = await storage.getWorkoutSession(req.params.id);
@@ -1236,7 +1321,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.patch("/api/sessions/:id/snapshot", isAuthenticatedOrDev, async (req: any, res) => {
+  app.patch("/api/sessions/:id([0-9a-fA-F-]{36})/snapshot", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const session = await storage.getWorkoutSession(req.params.id);
@@ -1264,7 +1349,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.post("/api/sessions/:id/complete", isAuthenticatedOrDev, async (req: any, res) => {
+  app.post("/api/sessions/:id([0-9a-fA-F-]{36})/complete", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const session = await storage.getWorkoutSession(req.params.id);
@@ -1355,7 +1440,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.patch("/api/sessions/:id/cancel", isAuthenticatedOrDev, async (req: any, res) => {
+  app.patch("/api/sessions/:id([0-9a-fA-F-]{36})/cancel", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const session = await storage.getWorkoutSession(req.params.id);
@@ -1386,7 +1471,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
 
   // ========== EXERCISE LOG ROUTES ==========
   
-  app.get("/api/sessions/:sessionId/exercises", isAuthenticatedOrDev, async (req: any, res) => {
+  app.get("/api/sessions/:sessionId([0-9a-fA-F-]{36})/exercises", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const session = await storage.getWorkoutSession(req.params.sessionId);
@@ -1430,7 +1515,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.patch("/api/exercises/:id", isAuthenticatedOrDev, async (req: any, res) => {
+  app.patch("/api/exercises/:id([0-9a-fA-F-]{36})", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const exerciseLog = await storage.getExerciseLog(req.params.id);
@@ -1460,7 +1545,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     reps: z.number().optional(),
   });
 
-  app.post("/api/sessions/:sessionId/exercises/:exerciseOrderIndex/bulk-update", isAuthenticatedOrDev, async (req: any, res) => {
+  app.post("/api/sessions/:sessionId([0-9a-fA-F-]{36})/exercises/:exerciseOrderIndex/bulk-update", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const { sessionId, exerciseOrderIndex } = req.params;
@@ -1518,7 +1603,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.post("/api/promos/:id/impression", isAuthenticatedOrDev, async (req: any, res) => {
+  app.post("/api/promos/:id([0-9a-fA-F-]{36})/impression", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const validatedParams = promoIdParamSchema.parse(req.params);
@@ -1539,7 +1624,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.post("/api/affiliate/click/:id", isAuthenticatedOrDev, async (req: any, res) => {
+  app.post("/api/affiliate/click/:id([0-9a-fA-F-]{36})", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const validatedParams = promoIdParamSchema.parse(req.params);
@@ -1680,7 +1765,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
   // ========== EXERCISE CATALOG ROUTES ==========
   
   // Get exercises suitable for a template (filtered by muscle focus)
-  app.get("/api/exercises/for-template/:templateId", isAuthenticatedOrDev, async (req: any, res) => {
+  app.get("/api/exercises/for-template/:templateId([0-9a-fA-F-]{36})", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const { templateId } = req.params;
@@ -2316,7 +2401,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.put("/api/admin/exercises/:id", isAuthenticatedOrDev, async (req: any, res) => {
+  app.put("/api/admin/exercises/:id([0-9a-fA-F-]{36})", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const updated = await storage.adminUpdateExercise(req.params.id, req.body);
       res.json(updated);
@@ -2343,7 +2428,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.put("/api/admin/equipment/:id", isAuthenticatedOrDev, async (req: any, res) => {
+  app.put("/api/admin/equipment/:id([0-9a-fA-F-]{36})", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const updated = await storage.adminUpdateEquipment(req.params.id, req.body);
       res.json(updated);
@@ -2370,7 +2455,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.put("/api/admin/gyms/:id", isAuthenticatedOrDev, async (req: any, res) => {
+  app.put("/api/admin/gyms/:id([0-9a-fA-F-]{36})", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const updated = await storage.adminUpdateGym(req.params.id, req.body);
       res.json(updated);
