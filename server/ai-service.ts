@@ -224,7 +224,7 @@ const v4BlueprintSchema = z.object({
     weekday: z.string(),
     name: z.string(),
     blocks: z.array(z.object({
-      type: z.enum(["warmup", "main", "accessory", "cardio", "cooldown"]),
+      type: z.enum(["warmup", "main", "accessory", "cardio", "cooldown", "endurance"]),
       exercises: z.array(z.object({
         exercise_id: z.string(),
         sets: z.number(),
