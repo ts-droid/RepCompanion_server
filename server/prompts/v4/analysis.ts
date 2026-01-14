@@ -18,6 +18,8 @@ export interface V4AnalysisInput {
     training_level?: TrainingLevel | string;
     primary_goal: string; // e.g. "build_muscle", "lose_weight", "sport_performance"
     sport?: string | null;
+    gym_name?: string | null;
+    gym_location?: string | null;
   };
 }
 
@@ -64,6 +66,8 @@ export function buildAnalysisUserPromptV4(input: V4AnalysisInput): string {
         training_level: input.user.training_level ?? null,
         primary_goal: input.user.primary_goal,
         sport: input.user.sport ?? null,
+        gym_name: input.user.gym_name ?? null,
+        gym_location: input.user.gym_location ?? null,
       },
       output_schema: {
         analysis_summary: "string",

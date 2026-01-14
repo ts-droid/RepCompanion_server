@@ -504,6 +504,9 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
         selectedGymId: firstGym?.id || null,
       });
 
+      let hasProgram = false;
+      let templatesCreated = 0;
+
       // Generate workout program automatically after onboarding
       try {
         
@@ -526,15 +529,28 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
           await storage.clearUserProgramTemplates(userId);
           
           await storage.createProgramTemplatesFromDeepSeek(userId, program);
+          
+          // Verify templates were created
+          const templates = await storage.getUserProgramTemplates(userId);
+          templatesCreated = templates.length;
+          hasProgram = templatesCreated > 0;
+
           // Reset pass counter to 1 for new program cycle
           await storage.updateUserProfile(userId, { currentPassNumber: 1 });
           
         }
       } catch (programError) {
         // Log error but don't fail onboarding if program generation fails
+        console.error("[Onboarding] ❌ Automatic program generation failed:", programError);
       }
 
-      res.json({ success: true, profile: finalProfile, gym: firstGym });
+      res.json({ 
+        success: true, 
+        profile: finalProfile, 
+        gym: firstGym,
+        hasProgram,
+        templatesCreated
+      });
     } catch (error) {
       if (error instanceof ZodError) {
         return res.status(400).json({ message: "Validation error", errors: error.errors });

@@ -27,7 +27,7 @@ const gemini = new OpenAI({
 
 // Provider priority: DeepSeek (cheapest) → Gemini → OpenAI (most expensive)
 // Set AI_PROVIDER_PRIORITY to override (e.g., "openai,gemini,deepseek")
-const DEFAULT_PROVIDER_PRIORITY = ["deepseek", "gemini", "openai"];
+const DEFAULT_PROVIDER_PRIORITY = ["gemini", "deepseek", "openai"];
 const PROVIDER_PRIORITY = (process.env.AI_PROVIDER_PRIORITY || DEFAULT_PROVIDER_PRIORITY.join(","))
   .split(",")
   .map(p => p.trim().toLowerCase());
@@ -609,12 +609,79 @@ async function hydrateV4Blueprint(
   };
 }
 
+// Helper to get configuration for a specific provider name
+function getClientConfig(provider: string): { client: OpenAI; provider: string; model: string } | null {
+  const p = provider.toLowerCase().trim();
+  if (p === "deepseek" && process.env.AI_INTEGRATIONS_DEEPSEEK_API_KEY) {
+    return { client: deepseek, provider: "DeepSeek", model: "deepseek-chat" };
+  }
+  if (p === "gemini" && process.env.AI_INTEGRATIONS_GEMINI_API_KEY) {
+    // Default to stable 1.5 Flash. Use AI_GEMINI_MODEL to override (e.g. "gemini-1.5-pro" or "gemini-2.0-flash-exp")
+    const model = process.env.AI_GEMINI_MODEL || "gemini-1.5-flash";
+    return { client: gemini, provider: "Gemini", model: model };
+  }
+  if (p === "openai" && process.env.AI_INTEGRATIONS_OPENAI_API_KEY) {
+    return { client: openai, provider: "OpenAI", model: "gpt-4o" };
+  }
+  return null;
+}
+
+// Execute an AI request with fallback to other providers
+async function executeWithFallback(
+  messages: any[],
+  responseFormat: any,
+  logPrefix: string
+): Promise<{ content: string; provider: string }> {
+  let lastError: any;
+  const attemptedProviders: string[] = [];
+
+  for (const providerName of PROVIDER_PRIORITY) {
+    const config = getClientConfig(providerName);
+    
+    // Skip unconfigured providers
+    if (!config) continue;
+    
+    try {
+      console.log(`[${logPrefix}] 🔄 Attempting generation with ${config.provider} (${config.model})...`);
+      
+      // Strict timeout to allow fallback rotation within client's 5-minute window
+      // Gemini Flash is usually < 10s. DeepSeek can be 30-60s.
+      // Set to 45s to be aggressive on stalls.
+      const timeoutMs = 45000; 
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("Request timed out (stalled)")), timeoutMs);
+      });
+
+      const apiPromise = config.client.chat.completions.create({
+        model: config.model,
+        messages,
+        response_format: responseFormat,
+      });
+      
+      const response = await Promise.race([apiPromise, timeoutPromise]) as any;
+      const content = response.choices[0].message.content || "{}";
+      
+      console.log(`[${logPrefix}] ✅ Success with ${config.provider}`);
+      return { content, provider: config.provider };
+      
+    } catch (error: any) {
+      console.warn(`[${logPrefix}] ⚠️ ${config.provider} failed: ${error.message}`);
+      lastError = error;
+      attemptedProviders.push(config.provider);
+      // Continue to next provider...
+    }
+  }
+
+  console.error(`[${logPrefix}] ❌ All providers failed. Tried: ${attemptedProviders.join(", ")}`);
+  throw lastError || new Error("No AI providers available or configured");
+}
+
 export async function generateWorkoutProgramV4WithOpenAI(
   profileData: any,
   targetDuration: number
 ): Promise<DeepSeekWorkoutProgram> {
-  const aiConfig = getAIClient();
-  console.log(`[V4] Using ${aiConfig.provider} for generation`);
+  // Use fallback mechanism instead of single client
+  console.log(`[V4] Starting generation with provider priority: ${PROVIDER_PRIORITY.join(" → ")}`);
   console.log("[V4] Starting Step A: Analysis");
   
   const analysisInput: V4Prompts.V4AnalysisInput = {
@@ -629,17 +696,17 @@ export async function generateWorkoutProgramV4WithOpenAI(
     }
   };
 
-  const analysisResponse = await aiConfig.client.chat.completions.create({
-    model: aiConfig.model,
-    messages: [
+  const analysisResult = await executeWithFallback(
+    [
       { role: "system", content: V4Prompts.buildAnalysisSystemPromptV4() },
       { role: "user", content: V4Prompts.buildAnalysisUserPromptV4(analysisInput) }
     ],
-    response_format: { type: "json_object" }
-  });
+    { type: "json_object" },
+    "V4 Analysis"
+  );
 
-  const analysis = v4AnalysisSchema.parse(JSON.parse(analysisResponse.choices[0].message.content || "{}"));
-  console.log("[V4] Analysis complete:", analysis.analysis_summary);
+  const analysis = v4AnalysisSchema.parse(JSON.parse(analysisResult.content));
+  console.log(`[V4] Analysis complete (via ${analysisResult.provider}):`, analysis.analysis_summary);
 
   console.log("[V4] Starting Step B: Blueprint");
   
@@ -651,18 +718,14 @@ export async function generateWorkoutProgramV4WithOpenAI(
     cooldownMinutesDefault: 5,
   };
 
-  // Build candidate pools - for now we use a simplified mock or fetch from DB
-  // In a real scenario, we'd have a sophisticated pool builder
   const pools = await storage.getCandidatePools(profileData.userId, profileData.selectedGymId);
   const candidatePools: V4Prompts.V4CandidatePools = {};
   pools.forEach(p => {
     Object.assign(candidatePools, p.buckets);
   });
 
-  // If no pools found, we might need a fallback or error
   if (Object.keys(candidatePools).length === 0) {
     console.warn("[V4] No candidate pools found, using minimal fallback");
-    // Minimal fallback logic could go here
   }
 
   const blueprintInput: V4Prompts.V4BlueprintInput = {
@@ -684,17 +747,17 @@ export async function generateWorkoutProgramV4WithOpenAI(
     candidate_pools: candidatePools,
   };
 
-  const blueprintResponse = await aiConfig.client.chat.completions.create({
-    model: aiConfig.model,
-    messages: [
+  const blueprintResult = await executeWithFallback(
+    [
       { role: "system", content: V4Prompts.buildBlueprintSystemPromptV4() },
       { role: "user", content: V4Prompts.buildBlueprintUserPromptV4(blueprintInput) }
     ],
-    response_format: { type: "json_object" }
-  });
+    { type: "json_object" },
+    "V4 Blueprint"
+  );
 
-  const blueprint = v4BlueprintSchema.parse(JSON.parse(blueprintResponse.choices[0].message.content || "{}"));
-  console.log("[V4] Blueprint complete:", blueprint.program_name);
+  const blueprint = v4BlueprintSchema.parse(JSON.parse(blueprintResult.content));
+  console.log(`[V4] Blueprint complete (via ${blueprintResult.provider}):`, blueprint.program_name);
 
   console.log("[V4] Starting Step C: Hydration & Time Fitting");
   
@@ -725,8 +788,7 @@ export async function generateWorkoutBlueprintV4WithOpenAI(
   profileData: any,
   targetDuration: number
 ): Promise<V4Blueprint> {
-  const aiConfig = getAIClient();
-  console.log(`[V4] Using ${aiConfig.provider} for generation`);
+  console.log(`[V4] Starting Blueprint generation with provider priority: ${PROVIDER_PRIORITY.join(" → ")}`);
   console.log("[V4] Starting Step A: Analysis (Blueprint Mode)");
   
   const analysisInput: V4Prompts.V4AnalysisInput = {
@@ -741,16 +803,16 @@ export async function generateWorkoutBlueprintV4WithOpenAI(
     }
   };
 
-  const analysisResponse = await aiConfig.client.chat.completions.create({
-    model: aiConfig.model,
-    messages: [
+  const analysisResult = await executeWithFallback(
+    [
       { role: "system", content: V4Prompts.buildAnalysisSystemPromptV4() },
       { role: "user", content: V4Prompts.buildAnalysisUserPromptV4(analysisInput) }
     ],
-    response_format: { type: "json_object" }
-  });
+    { type: "json_object" },
+    "V4 Analysis"
+  );
 
-  const analysis = v4AnalysisSchema.parse(JSON.parse(analysisResponse.choices[0].message.content || "{}"));
+  const analysis = v4AnalysisSchema.parse(JSON.parse(analysisResult.content));
 
   console.log("[V4] Starting Step B: Blueprint");
   
@@ -787,16 +849,16 @@ export async function generateWorkoutBlueprintV4WithOpenAI(
     candidate_pools: candidatePools,
   };
 
-  const blueprintResponse = await aiConfig.client.chat.completions.create({
-    model: aiConfig.model,
-    messages: [
+  const blueprintResult = await executeWithFallback(
+    [
       { role: "system", content: V4Prompts.buildBlueprintSystemPromptV4() },
       { role: "user", content: V4Prompts.buildBlueprintUserPromptV4(blueprintInput) }
     ],
-    response_format: { type: "json_object" }
-  });
+    { type: "json_object" },
+    "V4 Blueprint"
+  );
 
-  const blueprint = v4BlueprintSchema.parse(JSON.parse(blueprintResponse.choices[0].message.content || "{}"));
+  const blueprint = v4BlueprintSchema.parse(JSON.parse(blueprintResult.content));
 
   console.log("[V4] Starting Step C: Time Fitting (Blueprint Mode)");
   
