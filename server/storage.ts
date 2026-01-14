@@ -1280,7 +1280,74 @@ export class DatabaseStorage implements IStorage {
       }
     }
     
-    // No matching 1RM found
+    // FALLBACK: Heuristic estimates for isolation/accessory exercises
+    // These provide a reasonable starting point; users will adjust during workouts
+    
+    // Bicep exercises (based on pulling strength or bodyweight)
+    if (exerciseLower.includes('curl') && (exerciseLower.includes('bicep') || exerciseLower.includes('hammer') || exerciseLower.includes('preacher'))) {
+      // Estimate as ~30% of lat pulldown 1RM, or fallback to body weight percentage
+      if (userProfile.oneRmLatpull) {
+        return Math.round(userProfile.oneRmLatpull * 0.30 * rmPercentage);
+      }
+    }
+    
+    // Tricep isolation (based on pressing strength)
+    if ((exerciseLower.includes('tricep') || exerciseLower.includes('skullcrusher') || exerciseLower.includes('kickback')) && 
+        !exerciseLower.includes('dip') && !exerciseLower.includes('press')) {
+      // Estimate as ~25% of bench press 1RM
+      if (userProfile.oneRmBench) {
+        return Math.round(userProfile.oneRmBench * 0.25 * rmPercentage);
+      }
+    }
+    
+    // Lateral/Front raises (shoulder isolation)
+    if (exerciseLower.includes('lateral') || exerciseLower.includes('front raise') || exerciseLower.includes('side raise')) {
+      // Estimate as ~20% of OHP 1RM
+      if (userProfile.oneRmOhp) {
+        return Math.round(userProfile.oneRmOhp * 0.20 * rmPercentage);
+      }
+    }
+    
+    // Leg curls/extensions
+    if (exerciseLower.includes('leg curl') || exerciseLower.includes('leg extension')) {
+      // Estimate as ~40% of squat 1RM
+      if (userProfile.oneRmSquat) {
+        return Math.round(userProfile.oneRmSquat * 0.40 * rmPercentage);
+      }
+    }
+    
+    // Calf raises
+    if (exerciseLower.includes('calf')) {
+      // Estimate as ~60% of squat 1RM (calves are relatively strong)
+      if (userProfile.oneRmSquat) {
+        return Math.round(userProfile.oneRmSquat * 0.60 * rmPercentage);
+      }
+    }
+    
+    // Face pulls, rear delt work
+    if (exerciseLower.includes('face pull') || exerciseLower.includes('rear delt')) {
+      // Estimate as ~25% of lat pulldown 1RM
+      if (userProfile.oneRmLatpull) {
+        return Math.round(userProfile.oneRmLatpull * 0.25 * rmPercentage);
+      }
+    }
+    
+    // Shrugs
+    if (exerciseLower.includes('shrug')) {
+      // Estimate as ~70% of deadlift 1RM
+      if (userProfile.oneRmDeadlift) {
+        return Math.round(userProfile.oneRmDeadlift * 0.70 * rmPercentage);
+      }
+    }
+    
+    // Abs/core exercises - return a conservative starting weight
+    if (exerciseLower.includes('crunch') || exerciseLower.includes('plank') || 
+        exerciseLower.includes('ab') || exerciseLower.includes('core')) {
+      // Bodyweight exercises or light weights - return small value
+      return 5; // 5kg starting point for weighted core work
+    }
+    
+    // No matching pattern found
     return null;
   }
 
