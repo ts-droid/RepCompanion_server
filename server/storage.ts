@@ -73,7 +73,10 @@ export interface IStorage {
   getSelectedGym(userId: string): Promise<Gym | undefined>;
   setSelectedGym(userId: string, gymId: string): Promise<void>;
   updateGym(id: string, userId: string, data: { name: string; location?: string; latitude?: string | null; longitude?: string | null; isPublic?: boolean }): Promise<Gym>;
+  updateGym(id: string, userId: string, data: { name: string; location?: string; latitude?: string | null; longitude?: string | null; isPublic?: boolean }): Promise<Gym>;
   deleteGym(id: string, userId: string): Promise<void>;
+  findNearbyGyms(lat: number, lng: number, radiusKm: number): Promise<Array<Gym & { distance: number }>>;
+
   
   // Equipment operations
   getUserEquipment(userId: string): Promise<UserEquipment[]>;
@@ -433,6 +436,49 @@ export class DatabaseStorage implements IStorage {
 
   async clearUserGymPrograms(userId: string): Promise<void> {
     await db.delete(gymPrograms).where(eq(gymPrograms.userId, userId));
+  }
+
+  async findNearbyGyms(lat: number, lng: number, radiusKm: number = 50): Promise<Array<Gym & { distance: number }>> {
+    // Haversine formula helper
+    const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+      const R = 6371; // Earth radius in km
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = 
+        Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+        Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    };
+
+    // Fetch all public gyms
+    // Note: Since we store lat/lng as text (legacy decision), we fetch all public gyms 
+    // and filter in memory. This is fine for < 1000 gyms.
+    const publicGyms = await db
+      .select()
+      .from(gyms)
+      .where(eq(gyms.isPublic, true));
+
+    const gymsWithDistance = publicGyms
+      .map(gym => {
+        const gymLat = gym.latitude ? parseFloat(gym.latitude) : null;
+        const gymLng = gym.longitude ? parseFloat(gym.longitude) : null;
+        
+        if (gymLat === null || gymLng === null || isNaN(gymLat) || isNaN(gymLng)) {
+          return null;
+        }
+
+        const distance = calculateDistance(lat, lng, gymLat, gymLng);
+        return { ...gym, distance };
+      })
+      .filter((item): item is Gym & { distance: number } => 
+        item !== null && item.distance <= radiusKm
+      )
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 50); // Limit to top 50 matches
+
+    return gymsWithDistance;
   }
 
   // ========== Workout session operations ==========

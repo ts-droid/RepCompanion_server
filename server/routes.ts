@@ -585,6 +585,30 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
     }
   });
 
+  app.get("/api/gyms/nearby", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const { lat, lng, radius } = req.query;
+      
+      if (!lat || !lng) {
+        return res.status(400).json({ message: "Latitude (lat) and longitude (lng) are required" });
+      }
+
+      const latitude = parseFloat(String(lat));
+      const longitude = parseFloat(String(lng));
+      const radiusKm = radius ? parseFloat(String(radius)) : 50;
+
+      if (isNaN(latitude) || isNaN(longitude)) {
+        return res.status(400).json({ message: "Invalid coordinates" });
+      }
+
+      const nearbyGyms = await storage.findNearbyGyms(latitude, longitude, radiusKm);
+      res.json(nearbyGyms);
+    } catch (error) {
+      console.error("[GYM] Failed to search nearby gyms:", error);
+      res.status(500).json({ message: "Failed to search nearby gyms" });
+    }
+  });
+
   app.get("/api/gym-programs", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
