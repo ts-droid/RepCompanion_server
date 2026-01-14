@@ -1478,6 +1478,31 @@ export class DatabaseStorage implements IStorage {
           validatedReps = '8-12';
         }
         
+        // INVERSE VALIDATION: Ensure static/isometric exercises get time values instead of reps
+        const timeBasedKeywords = [
+          'plank', 'hold', 'static', 'isometric', 'dead hang', 'wall sit',
+          'bridge hold', 'hollow hold', 'l-sit', 'handstand hold'
+        ];
+        
+        const isTimeBasedExercise = timeBasedKeywords.some(keyword => exerciseNameLower.includes(keyword));
+        
+        if (!isTimeValue && isTimeBasedExercise) {
+          // Convert reps to seconds (estimate based on typical hold times)
+          const repsMatch = validatedReps.match(/\d+/);
+          if (repsMatch) {
+            const reps = parseInt(repsMatch[0]);
+            // Map rep count to appropriate hold time
+            let seconds = 30; // Default
+            if (reps <= 5) seconds = 45; // Low "reps" = longer hold
+            else if (reps <= 10) seconds = 30;
+            else if (reps <= 15) seconds = 20;
+            else seconds = 15; // High "reps" = shorter hold
+            
+            validatedReps = `${seconds} sec`;
+            console.warn(`[STORAGE] AI ERROR DETECTED: "${finalExerciseName}" has rep value "${exercise.reps}" - correcting to "${validatedReps}"`);
+          }
+        }
+        
         // CRITICAL VALIDATION: Enforce English-only exercise names
         const hasSwedishChars = /[åäöÅÄÖ]/.test(finalExerciseName);
         const hasSwedishWords = finalExerciseName.toLowerCase().includes('böj') || 
