@@ -14,7 +14,8 @@
     "db:backup": "node scripts/auto-db-backup.js",
     "db:watch": "nodemon --watch shared/schema.ts --exec 'npm run db:backup'",
     "db:migrate-to-railway": "tsx scripts/migrate-to-railway.ts",
-    "db:validate": "tsx scripts/validate-migration.ts"
+    "db:validate": "tsx scripts/validate-migration.ts",
+    "release": "npm version patch -m 'Release: %s' && git push && git push --tags"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
