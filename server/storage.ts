@@ -1429,7 +1429,12 @@ export class DatabaseStorage implements IStorage {
     return await db
       .select()
       .from(exercises)
-      .where(inArray(exercises.exerciseId, ids));
+      .where(
+        or(
+          inArray(exercises.exerciseId, ids),
+          inArray(exercises.id, ids)
+        )
+      );
   }
 
   async getCandidatePools(userId: string, gymId?: string): Promise<import("@shared/schema").CandidatePool[]> {

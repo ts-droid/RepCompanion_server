@@ -526,7 +526,11 @@ async function hydrateV4Blueprint(
   blueprint.sessions.forEach(s => s.blocks.forEach(b => b.exercises.forEach(e => exerciseIds.add(e.exercise_id))));
   
   const catalogExercises = await storage.getExercisesByIds(Array.from(exerciseIds));
-  const catalogMap = new Map(catalogExercises.map(ex => [ex.exerciseId, ex]));
+  const catalogMap = new Map<string, any>();
+  catalogExercises.forEach(ex => {
+    if (ex.exerciseId) catalogMap.set(ex.exerciseId, ex);
+    if (ex.id) catalogMap.set(ex.id, ex);
+  });
 
   const weeklySessions = blueprint.sessions.map(s => {
     const warmup: any[] = [];
