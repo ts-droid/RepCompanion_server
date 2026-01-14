@@ -40,10 +40,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  // Read version from package.json
+  const fs = await import("fs");
+  const path = await import("path");
+  const packageJsonPath = path.resolve(process.cwd(), "package.json");
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
+
   app.get("/api/version", (_req, res) => {
     res.json({ 
-      version: "1.0.1",
-      deployId: "uuid-regex-fix-v2",
+      version: packageJson.version,
+      deployId: process.env.RAILWAY_GIT_COMMIT_SHA || "dev",
       time: new Date().toISOString()
     });
   });
