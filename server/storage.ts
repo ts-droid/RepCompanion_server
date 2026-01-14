@@ -146,7 +146,8 @@ export interface IStorage {
   createProgramTemplatesFromDeepSeek(userId: string, program: import("./ai-service").DeepSeekWorkoutProgram): Promise<void>;
   clearUserProgramTemplates(userId: string): Promise<void>;
   updateLastCompletedTemplate(userId: string, templateId: string): Promise<void>;
-  getTemplatesWithMetadata(userId: string): Promise<Array<{ template: ProgramTemplate; exerciseCount: number; isNext: boolean }>>;
+  getTemplatesWithMetadata(userId: string): Promise<Array<{ template: ProgramTemplate; exerciseCount: number; exercises: ProgramTemplateExercise[]; isNext: boolean }>>;
+
   incrementProgramGeneration(userId: string): Promise<void>;
   
   // V4 specific operations
@@ -1334,7 +1335,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(userProfiles.userId, userId));
   }
 
-  async getTemplatesWithMetadata(userId: string): Promise<Array<{ template: ProgramTemplate; exerciseCount: number; isNext: boolean }>> {
+  async getTemplatesWithMetadata(userId: string): Promise<Array<{ template: ProgramTemplate; exerciseCount: number; exercises: ProgramTemplateExercise[]; isNext: boolean }>> {
     const profile = await this.getUserProfile(userId);
     const templates = await this.getUserProgramTemplates(userId);
     
@@ -1355,6 +1356,7 @@ export class DatabaseStorage implements IStorage {
         return {
           template,
           exerciseCount: exercises.length,
+          exercises, // Include exercises in response
           isNext: template.id === nextTemplateId,
         };
       })
