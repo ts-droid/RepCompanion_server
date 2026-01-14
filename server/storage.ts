@@ -1194,6 +1194,96 @@ export class DatabaseStorage implements IStorage {
     console.log("[STORAGE] Template creation complete");
   }
 
+  /**
+   * Calculate suggested weight based on user's 1RM values and target reps
+   */
+  private calculateSuggestedWeight(
+    exerciseName: string,
+    targetReps: string,
+    userProfile: {
+      oneRmBench?: number | null;
+      oneRmOhp?: number | null;
+      oneRmDeadlift?: number | null;
+      oneRmSquat?: number | null;
+      oneRmLatpull?: number | null;
+    }
+  ): number | null {
+    // Parse reps to get average (e.g., "8-12" -> 10)
+    const repsMatch = targetReps.match(/\d+/);
+    if (!repsMatch) return null;
+    
+    const reps = parseInt(repsMatch[0]);
+    
+    // Map reps to % of 1RM (standard powerlifting percentages)
+    let rmPercentage = 0.70; // Default for 10-12 reps
+    if (reps <= 3) rmPercentage = 0.90;
+    else if (reps <= 5) rmPercentage = 0.85;
+    else if (reps <= 8) rmPercentage = 0.80;
+    else if (reps <= 10) rmPercentage = 0.75;
+    else if (reps <= 12) rmPercentage = 0.70;
+    else if (reps <= 15) rmPercentage = 0.65;
+    else rmPercentage = 0.60;
+    
+    // Map exercise to relevant 1RM based on movement pattern
+    const exerciseLower = exerciseName.toLowerCase();
+    
+    // Bench Press movements
+    if (exerciseLower.includes('bench') || 
+        exerciseLower.includes('chest press') ||
+        exerciseLower.includes('push up') ||
+        exerciseLower.includes('push-up')) {
+      if (userProfile.oneRmBench) {
+        return Math.round(userProfile.oneRmBench * rmPercentage);
+      }
+    }
+    
+    // Overhead Press movements
+    if (exerciseLower.includes('overhead') || 
+        exerciseLower.includes('shoulder press') ||
+        exerciseLower.includes('military press') ||
+        exerciseLower.includes('seated press') ||
+        (exerciseLower.includes('dumbbell') && exerciseLower.includes('press') && !exerciseLower.includes('bench'))) {
+      if (userProfile.oneRmOhp) {
+        return Math.round(userProfile.oneRmOhp * rmPercentage);
+      }
+    }
+    
+    // Squat movements
+    if (exerciseLower.includes('squat') || 
+        exerciseLower.includes('leg press') ||
+        exerciseLower.includes('hack squat')) {
+      if (userProfile.oneRmSquat) {
+        // Leg press is typically ~2x squat strength
+        const multiplier = exerciseLower.includes('leg press') ? 2.0 : 1.0;
+        return Math.round(userProfile.oneRmSquat * rmPercentage * multiplier);
+      }
+    }
+    
+    // Deadlift movements
+    if (exerciseLower.includes('deadlift') || 
+        exerciseLower.includes('rdl') ||
+        exerciseLower.includes('romanian')) {
+      if (userProfile.oneRmDeadlift) {
+        // RDL is typically ~85% of conventional deadlift
+        const multiplier = (exerciseLower.includes('rdl') || exerciseLower.includes('romanian')) ? 0.85 : 1.0;
+        return Math.round(userProfile.oneRmDeadlift * rmPercentage * multiplier);
+      }
+    }
+    
+    // Pull movements (rows, pulldowns, pull-ups)
+    if (exerciseLower.includes('row') || 
+        exerciseLower.includes('pull') ||
+        exerciseLower.includes('lat') ||
+        exerciseLower.includes('chin')) {
+      if (userProfile.oneRmLatpull) {
+        return Math.round(userProfile.oneRmLatpull * rmPercentage);
+      }
+    }
+    
+    // No matching 1RM found
+    return null;
+  }
+
   async createProgramTemplatesFromDeepSeek(userId: string, program: import("./ai-service").DeepSeekWorkoutProgram): Promise<void> {
     console.log("[STORAGE] createProgramTemplatesFromDeepSeek called for userId:", userId);
     console.log("[STORAGE] Program overview:", program.program_overview.week_focus_summary);
@@ -1205,7 +1295,6 @@ export class DatabaseStorage implements IStorage {
       throw new Error("No weekly sessions found in generated program");
     }
     
-    // Weekday mapping: Swedish weekday → integer (1=Monday, 7=Sunday)
     const weekdayToNumber: Record<string, number> = {
       'måndag': 1, 'monday': 1,
       'tisdag': 2, 'tuesday': 2,
@@ -1216,11 +1305,21 @@ export class DatabaseStorage implements IStorage {
       'söndag': 7, 'sunday': 7,
     };
     
+    // Fetch user profile to get 1RM values for weight calculation
+    const userProfile = await this.getUserProfile(userId);
+    console.log("[STORAGE] Fetched user profile for weight calculation:", {
+      oneRmBench: userProfile?.oneRmBench,
+      oneRmOhp: userProfile?.oneRmOhp,
+      oneRmDeadlift: userProfile?.oneRmDeadlift,
+      oneRmSquat: userProfile?.oneRmSquat,
+      oneRmLatpull: userProfile?.oneRmLatpull,
+    });
+    
     const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
     
     for (let i = 0; i < weeklySessions.length; i++) {
       const session = weeklySessions[i];
-      const templateName = `Pass ${letters[i] || i + 1}`;
+      const templateName = session.session_name || `Pass ${letters[i] || i + 1}`;
       
       // Map AI's weekday to dayOfWeek integer
       const weekdayStr = session.weekday?.toLowerCase() || '';
@@ -1325,7 +1424,26 @@ export class DatabaseStorage implements IStorage {
         }
         
         console.log(`[VALIDATION] ✅ English exercise name confirmed: "${finalExerciseName}"`);
-        console.log(`[STORAGE] Adding exercise ${j + 1}: AI="${aiGeneratedName}" → Matched="${finalExerciseName}" (${matchResult.confidence}), Reps="${validatedReps}"`);
+        
+        // Calculate suggested weight: use AI's suggestion if available, otherwise calculate locally
+        let suggestedWeight: number | null = null;
+        if (exercise.suggested_weight_kg) {
+          suggestedWeight = Math.round(exercise.suggested_weight_kg);
+          console.log(`[STORAGE] Using AI-provided weight: ${suggestedWeight}kg for "${finalExerciseName}"`);
+        } else if (userProfile) {
+          suggestedWeight = this.calculateSuggestedWeight(finalExerciseName, validatedReps, {
+            oneRmBench: userProfile.oneRmBench,
+            oneRmOhp: userProfile.oneRmOhp,
+            oneRmDeadlift: userProfile.oneRmDeadlift,
+            oneRmSquat: userProfile.oneRmSquat,
+            oneRmLatpull: userProfile.oneRmLatpull,
+          });
+          if (suggestedWeight) {
+            console.log(`[STORAGE] Calculated weight: ${suggestedWeight}kg for "${finalExerciseName}" (${validatedReps} reps)`);
+          }
+        }
+        
+        console.log(`[STORAGE] Adding exercise ${j + 1}: AI="${aiGeneratedName}" → Matched="${finalExerciseName}" (${matchResult.confidence}), Reps="${validatedReps}", Weight=${suggestedWeight || 'N/A'}kg`);
         
         await db.insert(programTemplateExercises).values({
           templateId: template.id,
@@ -1334,7 +1452,7 @@ export class DatabaseStorage implements IStorage {
           orderIndex: j,
           targetSets: exercise.sets || 3,
           targetReps: validatedReps,
-          targetWeight: exercise.suggested_weight_kg ? Math.round(exercise.suggested_weight_kg) : null,
+          targetWeight: suggestedWeight,
           requiredEquipment: exercise.required_equipment || [],
           muscles: exercise.target_muscles || [],
           notes: [
