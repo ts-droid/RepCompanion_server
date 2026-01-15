@@ -14,6 +14,9 @@ import type { Exercise, EquipmentCatalog, Gym, UnmappedExercise } from "@shared/
 import { useLocation } from "wouter";
 import "@/admin.css";
 
+type EnhancedExercise = Exercise & { aliases?: string[] };
+type EnhancedEquipment = EquipmentCatalog & { aliases?: string[] };
+
 export default function AdminDashboard() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -21,8 +24,8 @@ export default function AdminDashboard() {
   const [searchTerm, setSearchTerm] = useState("");
 
   // Editing state
-  const [editingEx, setEditingEx] = useState<Exercise | null>(null);
-  const [editingEq, setEditingEq] = useState<EquipmentCatalog | null>(null);
+  const [editingEx, setEditingEx] = useState<EnhancedExercise | null>(null);
+  const [editingEq, setEditingEq] = useState<EnhancedEquipment | null>(null);
   const [editingGym, setEditingGym] = useState<Gym | null>(null);
   const [mappingUnmapped, setMappingUnmapped] = useState<UnmappedExercise | null>(null);
   const [newAlias, setNewAlias] = useState("");
@@ -36,11 +39,11 @@ export default function AdminDashboard() {
     queryKey: ["/api/admin/unmapped-exercises"],
   });
 
-  const { data: exercises } = useQuery<Exercise[]>({
+  const { data: exercises } = useQuery<EnhancedExercise[]>({
     queryKey: ["/api/admin/exercises"],
   });
 
-  const { data: equipment } = useQuery<EquipmentCatalog[]>({
+  const { data: equipment } = useQuery<EnhancedEquipment[]>({
     queryKey: ["/api/admin/equipment"],
   });
 
@@ -332,7 +335,7 @@ export default function AdminDashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {equipment?.map((eq: any) => (
+                    {equipment?.map((eq) => (
                       <TableRow key={eq.id} className="admin-table-row">
                         <TableCell className="font-semibold">
                           <div className="flex flex-col">

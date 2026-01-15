@@ -2496,9 +2496,9 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
       const { equipmentCatalog, equipmentAliases } = await import("@shared/schema");
       const data = await db.select().from(equipmentCatalog).orderBy(equipmentCatalog.name);
       
-      const enhancedData = await Promise.all(data.map(async (eq) => {
-        const aliases = await db.select().from(equipmentAliases).where(eq(equipmentAliases.equipmentKey, eq.equipmentKey || ""));
-        return { ...eq, aliases: aliases.map(a => a.alias) };
+      const enhancedData = await Promise.all(data.map(async (item) => {
+        const aliases = await db.select().from(equipmentAliases).where(eq(equipmentAliases.equipmentKey, item.equipmentKey || ""));
+        return { ...item, aliases: aliases.map(a => a.alias) };
       }));
       
       res.json(enhancedData);
