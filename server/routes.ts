@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { isAuthenticatedOrDev } from "./devAuth";
+import { requireAdminAuth } from "./adminMiddleware";
 import { 
   verifyAppleToken, 
   verifyGoogleToken, 
@@ -2310,7 +2311,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
 
   // ========== ADMIN ROUTES ==========
   
-  app.get("/api/admin/unmapped-exercises", isAuthenticatedOrDev, async (req: any, res) => {
+  app.get("/api/admin/unmapped-exercises", requireAdminAuth, async (req: any, res) => {
     try {
       const { getUnmappedExercises } = await import("./exercise-matcher");
       const unmappedExercises = await getUnmappedExercises();
@@ -2447,7 +2448,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
 
   // ========== ADMIN ROUTES ==========
 
-  app.get("/api/admin/unmapped-exercises", isAuthenticatedOrDev, async (req: any, res) => {
+  app.get("/api/admin/unmapped-exercises", requireAdminAuth, async (req: any, res) => {
     try {
       const data = await storage.adminGetUnmappedExercises();
       res.json(data);
@@ -2456,7 +2457,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.get("/api/admin/exercises", isAuthenticatedOrDev, async (req: any, res) => {
+  app.get("/api/admin/exercises", requireAdminAuth, async (req: any, res) => {
     try {
       const data = await storage.adminGetAllExercises();
       res.json(data);
@@ -2465,7 +2466,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.put("/api/admin/exercises/:id([0-9a-fA-F-]{36})", isAuthenticatedOrDev, async (req: any, res) => {
+  app.put("/api/admin/exercises/:id([0-9a-fA-F-]{36})", requireAdminAuth, async (req: any, res) => {
     try {
       const updated = await storage.adminUpdateExercise(req.params.id, req.body);
       res.json(updated);
@@ -2474,7 +2475,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.post("/api/admin/exercise-aliases", isAuthenticatedOrDev, async (req: any, res) => {
+  app.post("/api/admin/exercise-aliases", requireAdminAuth, async (req: any, res) => {
     try {
       const alias = await storage.adminCreateExerciseAlias(req.body);
       res.json(alias);
@@ -2483,7 +2484,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.get("/api/admin/equipment", isAuthenticatedOrDev, async (req: any, res) => {
+  app.get("/api/admin/equipment", requireAdminAuth, async (req: any, res) => {
     try {
       const data = await storage.adminGetAllEquipment();
       res.json(data);
@@ -2492,7 +2493,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.put("/api/admin/equipment/:id([0-9a-fA-F-]{36})", isAuthenticatedOrDev, async (req: any, res) => {
+  app.put("/api/admin/equipment/:id([0-9a-fA-F-]{36})", requireAdminAuth, async (req: any, res) => {
     try {
       const updated = await storage.adminUpdateEquipment(req.params.id, req.body);
       res.json(updated);
@@ -2510,7 +2511,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.get("/api/admin/gyms", isAuthenticatedOrDev, async (req: any, res) => {
+  app.get("/api/admin/gyms", requireAdminAuth, async (req: any, res) => {
     try {
       const data = await storage.adminGetAllGyms();
       res.json(data);
@@ -2916,7 +2917,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
 
   // ========== ADMIN DATA ROUTES ==========
 
-  app.get("/api/admin/stats", isAuthenticatedOrDev, async (req: any, res) => {
+  app.get("/api/admin/stats", requireAdminAuth, async (req: any, res) => {
     try {
       const usersCount = await storage.adminGetUsersCount();
       res.json({ usersCount });
