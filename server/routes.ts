@@ -2609,6 +2609,50 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
+  app.post("/api/admin/exercises/delete-batch", requireAdminAuth, async (req: any, res) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids)) return res.status(400).json({ message: "IDs must be an array" });
+      await storage.adminDeleteExercisesBatch(ids);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete exercises" });
+    }
+  });
+
+  app.post("/api/admin/unmapped-exercises/delete-batch", requireAdminAuth, async (req: any, res) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids)) return res.status(400).json({ message: "IDs must be an array" });
+      await storage.adminDeleteUnmappedExercisesBatch(ids);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete unmapped exercises" });
+    }
+  });
+
+  app.post("/api/admin/equipment/delete-batch", requireAdminAuth, async (req: any, res) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids)) return res.status(400).json({ message: "IDs must be an array" });
+      await storage.adminDeleteEquipmentCatalogBatch(ids);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete equipment" });
+    }
+  });
+
+  app.post("/api/admin/gyms/delete-batch", requireAdminAuth, async (req: any, res) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids)) return res.status(400).json({ message: "IDs must be an array" });
+      await storage.adminDeleteGymsBatch(ids);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete gyms" });
+    }
+  });
+
   // ========== DEDICATED ADMIN USER AUTHENTICATION ==========
   
   const { hashPassword, verifyPassword, validatePasswordStrength, generateTOTPSecret, verifyTOTP, generateAdminJWT, verifyAdminJWT } = await import("./adminUserAuth");

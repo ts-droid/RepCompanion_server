@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Exercise, EquipmentCatalog, Gym, UnmappedExercise } from "@shared/schema";
@@ -29,6 +30,18 @@ export default function AdminDashboard() {
   const [editingGym, setEditingGym] = useState<Gym | null>(null);
   const [mappingUnmapped, setMappingUnmapped] = useState<UnmappedExercise | null>(null);
   const [newAlias, setNewAlias] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const toggleId = (id: string) => {
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleTabChange = (val: string) => {
+    setActiveTab(val);
+    setSelectedIds([]);
+  };
 
   // Queries
   const { data: stats } = useQuery<{ usersCount: number }>({
@@ -113,6 +126,31 @@ export default function AdminDashboard() {
     },
   });
 
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async ({ type, ids }: { type: 'exercises' | 'equipment' | 'gyms' | 'unmapped-exercises'; ids: string[] }) => {
+      const res = await apiRequest("POST", `/api/admin/${type}/delete-batch`, { ids });
+      return res.json();
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/admin/${variables.type}`] });
+      setSelectedIds([]);
+      toast({ 
+        title: `${idsInSwedish(variables.type)} borttagna`,
+        description: `${variables.ids.length} objekt raderades.`
+      });
+    },
+  });
+
+  function idsInSwedish(type: string) {
+    switch (type) {
+      case 'exercises': return 'Övningar';
+      case 'equipment': return 'Utrustning';
+      case 'gyms': return 'Gym';
+      case 'unmapped-exercises': return 'Omatchade övningar';
+      default: return 'Objekt';
+    }
+  }
+
   // Filtering
   const filteredExercises = exercises?.filter(ex => 
     ex.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -132,7 +170,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6 animate-admin-fade">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6 animate-admin-fade">
           <TabsList className="grid grid-cols-2 md:grid-cols-5 h-auto gap-2 p-1 border rounded-xl glass-panel">
             <TabsTrigger value="overview" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all duration-300">Översikt</TabsTrigger>
             <TabsTrigger value="unmapped" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all duration-300 relative">
@@ -193,9 +231,42 @@ export default function AdminDashboard() {
                 <CardDescription>Övningar som AI:n föreslagit men som saknar koppling i databasen</CardDescription>
               </CardHeader>
               <CardContent className="p-0">
+                <div className="p-4 bg-muted/10 border-b flex justify-between items-center h-16">
+                  <div className="flex items-center gap-2">
+                    {selectedIds.length > 0 && (
+                      <>
+                        <span className="text-sm font-medium text-muted-foreground mr-2">
+                          {selectedIds.length} markerade
+                        </span>
+                        <Button 
+                          variant="destructive" 
+                          size="sm" 
+                          onClick={() => confirm(`Ta bort ${selectedIds.length} omatchade övningar?`) && bulkDeleteMutation.mutate({ type: 'unmapped-exercises', ids: selectedIds })}
+                          className="hover-elevate"
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" /> Radera markerade
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
                 <Table>
                   <TableHeader className="bg-muted/20">
                     <TableRow>
+                      <TableHead className="w-12">
+                        <Checkbox 
+                          checked={unmapped && unmapped.length > 0 && unmapped.every(i => selectedIds.includes(i.id))}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              const allIds = unmapped?.map(i => i.id) || [];
+                              setSelectedIds(prev => Array.from(new Set([...prev, ...allIds])));
+                            } else {
+                              const allIds = unmapped?.map(i => i.id) || [];
+                              setSelectedIds(prev => prev.filter(id => !allIds.includes(id)));
+                            }
+                          }}
+                        />
+                      </TableHead>
                       <TableHead>AI Namn</TableHead>
                       <TableHead>Antal träffar</TableHead>
                       <TableHead>Senast sedd</TableHead>
@@ -205,6 +276,12 @@ export default function AdminDashboard() {
                   <TableBody>
                     {unmapped?.map((item) => (
                       <TableRow key={item.id} className="admin-table-row">
+                        <TableCell>
+                          <Checkbox 
+                            checked={selectedIds.includes(item.id)}
+                            onCheckedChange={() => toggleId(item.id)}
+                          />
+                        </TableCell>
                         <TableCell className="font-semibold">{item.aiName}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className="bg-background">{item.count} ggr</Badge>
@@ -261,10 +338,43 @@ export default function AdminDashboard() {
               </div>
 
               <Card className="admin-card overflow-hidden">
+                <div className="p-4 bg-muted/10 border-b flex justify-between items-center h-16">
+                  <div className="flex items-center gap-2">
+                    {selectedIds.length > 0 && (
+                      <>
+                        <span className="text-sm font-medium text-muted-foreground mr-2">
+                          {selectedIds.length} markerade
+                        </span>
+                        <Button 
+                          variant="destructive" 
+                          size="sm" 
+                          onClick={() => confirm(`Ta bort ${selectedIds.length} övningar?`) && bulkDeleteMutation.mutate({ type: 'exercises', ids: selectedIds })}
+                          className="hover-elevate"
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" /> Radera markerade
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
                 <CardContent className="p-0">
                   <Table>
                     <TableHeader className="bg-muted/30">
                       <TableRow>
+                        <TableHead className="w-12">
+                          <Checkbox 
+                            checked={filteredExercises && filteredExercises.length > 0 && filteredExercises.slice(0, 50).every(i => selectedIds.includes(i.id))}
+                            onCheckedChange={(checked) => {
+                              const slice = filteredExercises?.slice(0, 50) || [];
+                              const sliceIds = slice.map(i => i.id);
+                              if (checked) {
+                                setSelectedIds(prev => Array.from(new Set([...prev, ...sliceIds])));
+                              } else {
+                                setSelectedIds(prev => prev.filter(id => !sliceIds.includes(id)));
+                              }
+                            }}
+                          />
+                        </TableHead>
                         <TableHead className="w-[80px]">ID</TableHead>
                         <TableHead>Namn (SV)</TableHead>
                         <TableHead>Namn (EN)</TableHead>
@@ -277,6 +387,12 @@ export default function AdminDashboard() {
                     <TableBody>
                       {filteredExercises?.slice(0, 50).map((ex) => (
                         <TableRow key={ex.id} className="admin-table-row">
+                          <TableCell>
+                            <Checkbox 
+                              checked={selectedIds.includes(ex.id)}
+                              onCheckedChange={() => toggleId(ex.id)}
+                            />
+                          </TableCell>
                           <TableCell className="text-[10px] font-mono text-muted-foreground">
                             {ex.id.substring(0, 8)}
                           </TableCell>
@@ -341,9 +457,42 @@ export default function AdminDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
+                <div className="p-4 bg-muted/10 border-b flex justify-between items-center h-16">
+                  <div className="flex items-center gap-2">
+                    {selectedIds.length > 0 && (
+                      <>
+                        <span className="text-sm font-medium text-muted-foreground mr-2">
+                          {selectedIds.length} markerade
+                        </span>
+                        <Button 
+                          variant="destructive" 
+                          size="sm" 
+                          onClick={() => confirm(`Ta bort ${selectedIds.length} utrustningsposter?`) && bulkDeleteMutation.mutate({ type: 'equipment', ids: selectedIds })}
+                          className="hover-elevate"
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" /> Radera markerade
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
                 <Table>
                   <TableHeader className="bg-muted/20">
                     <TableRow>
+                      <TableHead className="w-12">
+                        <Checkbox 
+                          checked={equipment && equipment.length > 0 && equipment.every(i => selectedIds.includes(i.id))}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              const allIds = equipment?.map(i => i.id) || [];
+                              setSelectedIds(prev => Array.from(new Set([...prev, ...allIds])));
+                            } else {
+                              const allIds = equipment?.map(i => i.id) || [];
+                              setSelectedIds(prev => prev.filter(id => !allIds.includes(id)));
+                            }
+                          }}
+                        />
+                      </TableHead>
                       <TableHead>Namn (SV)</TableHead>
                       <TableHead>Namn (EN)</TableHead>
                       <TableHead>Kategori</TableHead>
@@ -354,6 +503,12 @@ export default function AdminDashboard() {
                   <TableBody>
                     {equipment?.map((eq) => (
                       <TableRow key={eq.id} className="admin-table-row">
+                        <TableCell>
+                          <Checkbox 
+                            checked={selectedIds.includes(eq.id)}
+                            onCheckedChange={() => toggleId(eq.id)}
+                          />
+                        </TableCell>
                         <TableCell className="font-semibold">
                           <div className="flex flex-col">
                             <span>{eq.name}</span>
@@ -394,9 +549,42 @@ export default function AdminDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
+                <div className="p-4 bg-muted/10 border-b flex justify-between items-center h-16">
+                  <div className="flex items-center gap-2">
+                    {selectedIds.length > 0 && (
+                      <>
+                        <span className="text-sm font-medium text-muted-foreground mr-2">
+                          {selectedIds.length} markerade
+                        </span>
+                        <Button 
+                          variant="destructive" 
+                          size="sm" 
+                          onClick={() => confirm(`Ta bort ${selectedIds.length} gym?`) && bulkDeleteMutation.mutate({ type: 'gyms', ids: selectedIds })}
+                          className="hover-elevate"
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" /> Radera markerade
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
                 <Table>
                   <TableHeader className="bg-muted/20">
                     <TableRow>
+                      <TableHead className="w-12">
+                        <Checkbox 
+                          checked={gyms && gyms.length > 0 && gyms.every(i => selectedIds.includes(i.id))}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              const allIds = gyms?.map(i => i.id) || [];
+                              setSelectedIds(prev => Array.from(new Set([...prev, ...allIds])));
+                            } else {
+                              const allIds = gyms?.map(i => i.id) || [];
+                              setSelectedIds(prev => prev.filter(id => !allIds.includes(id)));
+                            }
+                          }}
+                        />
+                      </TableHead>
                       <TableHead>Namn</TableHead>
                       <TableHead>Plats / Adress</TableHead>
                       <TableHead>Utrustning</TableHead>
@@ -407,6 +595,12 @@ export default function AdminDashboard() {
                   <TableBody>
                     {gyms?.map((gym: any) => (
                       <TableRow key={gym.id} className="admin-table-row">
+                        <TableCell>
+                          <Checkbox 
+                            checked={selectedIds.includes(gym.id)}
+                            onCheckedChange={() => toggleId(gym.id)}
+                          />
+                        </TableCell>
                         <TableCell className="font-semibold">{gym.name}</TableCell>
                         <TableCell className="text-xs">{gym.location || "Ej angivet"}</TableCell>
                         <TableCell>

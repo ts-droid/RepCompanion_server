@@ -1801,6 +1801,26 @@ export class DatabaseStorage implements IStorage {
     await db.delete(gyms).where(eq(gyms.id, id));
   }
 
+  async adminDeleteExercisesBatch(ids: string[]): Promise<void> {
+    const { exercises } = await import("@shared/schema");
+    await db.delete(exercises).where(inArray(exercises.id, ids));
+  }
+
+  async adminDeleteUnmappedExercisesBatch(ids: string[]): Promise<void> {
+    const { unmappedExercises } = await import("@shared/schema");
+    await db.delete(unmappedExercises).where(inArray(unmappedExercises.id, ids));
+  }
+
+  async adminDeleteEquipmentCatalogBatch(ids: string[]): Promise<void> {
+    const { equipmentCatalog } = await import("@shared/schema");
+    await db.delete(equipmentCatalog).where(inArray(equipmentCatalog.id, ids));
+  }
+
+  async adminDeleteGymsBatch(ids: string[]): Promise<void> {
+    const { gyms } = await import("@shared/schema");
+    await db.delete(gyms).where(inArray(gyms.id, ids));
+  }
+
   async adminGetUsersCount(): Promise<number> {
     const { users } = await import("@shared/schema");
     const result = await db.select({ count: sql<number>`count(*)` }).from(users);
