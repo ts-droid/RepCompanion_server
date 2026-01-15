@@ -12,6 +12,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/run-migrations.ts",
     "db:seed": "tsx scripts/seed-default-admin.ts",
+    "db:setup": "tsx scripts/railway-setup.ts",
     "db:backup": "node scripts/auto-db-backup.js",
     "db:watch": "nodemon --watch shared/schema.ts --exec 'npm run db:backup'",
     "db:migrate-to-railway": "tsx scripts/migrate-to-railway.ts",
