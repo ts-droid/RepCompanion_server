@@ -2528,6 +2528,332 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
+  // ========== DEDICATED ADMIN USER AUTHENTICATION ==========
+  
+  const { hashPassword, verifyPassword, validatePasswordStrength, generateTOTPSecret, verifyTOTP, generateAdminJWT, verifyAdminJWT } = await import("./adminUserAuth");
+  const { adminUsers } = await import("@shared/schema");
+  
+  /**
+   * Step 1: Admin login with email/password
+   * Returns: tempToken for multi-step auth flow
+   */
+  app.post("/api/admin-user/login",async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ error: "Email and password required" });
+      }
+      
+      // Find admin user
+      const [admin] = await db.select().from(adminUsers).where(eq(adminUsers.email, email.toLowerCase()));
+      
+      if (!admin) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      
+      // Verify password
+      const validPassword = await verifyPassword(password, admin.passwordHash);
+      if (!validPassword) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      
+      // Check if password change required
+      if (admin.forcePasswordChange) {
+        const tempToken = generateAdminJWT(admin.id, email);
+        return res.json({
+          step: "password_change_required",
+          tempToken,
+          message: "Password change required before first login"
+        });
+      }
+      
+      //Check if 2FA is set up (mandatory)
+      if (!admin.totpEnabled) {
+        const tempToken = generateAdminJWT(admin.id, email);
+        return res.json({
+          step: "2fa_setup_required",
+          tempToken,
+          message: "2FA setup required"
+        });
+      }
+      
+      // 2FA enabled - require TOTP token
+      const tempToken = generateAdminJWT(admin.id, email);
+      return res.json({
+        step: "2fa_verification_required",
+        tempToken,
+        message: "Enter your 6-digit 2FA code"
+      });
+      
+    } catch (error) {
+      console.error("[ADMIN-USER-AUTH] Login error:", error);
+      res.status(500).json({ error: "Login failed" });
+    }
+  });
+  
+  /**
+   * Step 2: Change password (required on first login)
+   */
+  app.post("/api/admin-user/change-password", async (req, res) => {
+    try {
+      const { tempToken, newPassword } = req.body;
+      
+      if (!tempToken || !newPassword) {
+        return res.status(400).json({ error: "Token and new password required" });
+      }
+      
+      // Verify temp token
+      const decoded = verifyAdminJWT(tempToken);
+      if (!decoded) {
+        return res.status(401).json({ error: "Invalid or expired token" });
+      }
+      
+      // Validate password strength
+      const validation = validatePasswordStrength(newPassword);
+      if (!validation.valid) {
+        return res.status(400).json({ error: validation.error });
+      }
+      
+      // Hash new password
+      const passwordHash = await hashPassword(newPassword);
+      
+      // Update admin user
+      await db
+        .update(adminUsers)
+        .set({
+          passwordHash,
+          forcePasswordChange: false,
+          updatedAt: new Date(),
+        })
+        .where(eq(adminUsers.id, decoded.adminId));
+      
+      // Generate new temp token for next step (2FA setup)
+      const newTempToken = generateAdminJWT(decoded.adminId, decoded.email);
+      
+      res.json({
+        success: true,
+        step: "2fa_setup_required",
+        tempToken: newTempToken,
+        message: "Password changed successfully. Now setup 2FA."
+      });
+    } catch (error) {
+      console.error("[ADMIN-USER-AUTH] Password change error:", error);
+      res.status(500).json({ error: "Password change failed" });
+    }
+  });
+  
+  /**
+   * Step 3: Get 2FA setup (QR code)
+   */
+  app.get("/api/admin-user/2fa/setup", async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) {
+        return res.status(401).json({ error: "Auth token required" });
+      }
+      
+      const token = authHeader.substring(7);
+      const decoded = verifyAdminJWT(token);
+      if (!decoded) {
+        return res.status(401).json({ error: "Invalid or expired token" });
+      }
+      
+      // Generate TOTP secret and QR code
+      const { secret, qrCodeUrl } = await generateTOTPSecret(decoded.email);
+      
+      // Store secret temporarily (will be confirmed on verification)
+      await db
+        .update(adminUsers)
+        .set({
+          totpSecret: secret,
+          updatedAt: new Date(),
+        })
+        .where(eq(adminUsers.id, decoded.adminId));
+      
+      res.json({
+        qrCodeUrl,
+        secret,
+        message: "Scan QR code with Google Authenticator and enter the 6-digit code"
+      });
+    } catch (error) {
+      console.error("[ADMIN-USER-AUTH] 2FA setup error:", error);
+      res.status(500).json({ error: "2FA setup failed" });
+    }
+  });
+  
+  /**
+   * Step 4: Enable 2FA (verify first TOTP token)
+   */
+  app.post("/api/admin-user/2fa/enable", async (req, res) => {
+    try {
+      const { tempToken, totpToken } = req.body;
+      
+      if (!tempToken || !totpToken) {
+        return res.status(400).json({ error: "Token and TOTP code required" });
+      }
+      
+      const decoded = verifyAdminJWT(tempToken);
+      if (!decoded) {
+        return res.status(401).json({ error: "Invalid or expired token" });
+      }
+      
+      // Get admin user
+      const [admin] = await db.select().from(adminUsers).where(eq(adminUsers.id, decoded.adminId));
+      if (!admin || !admin.totpSecret) {
+        return res.status(400).json({ error: "2FA not set up" });
+      }
+      
+      // Verify TOTP token
+      const valid = verifyTOTP(totpToken, admin.totpSecret);
+      if (!valid) {
+        return res.status(401).json({ error: "Invalid 2FA code" });
+      }
+      
+      // Enable 2FA
+      await db
+        .update(adminUsers)
+        .set({
+          totpEnabled: true,
+          lastLogin: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(adminUsers.id, decoded.adminId));
+      
+      // Generate final JWT token
+      const authToken = generateAdminJWT(decoded.adminId, decoded.email);
+      
+      res.json({
+        success: true,
+        authToken,
+        email: decoded.email,
+        message: "2FA enabled successfully. You are now logged in."
+      });
+    } catch (error) {
+      console.error("[ADMIN-USER-AUTH] 2FA enable error:", error);
+      res.status(500).json({ error: "2FA enable failed" });
+    }
+  });
+  
+  /**
+   * Step 5: Verify 2FA during login (for returning users)
+   */
+  app.post("/api/admin-user/2fa/verify", async (req, res) => {
+    try {
+      const { tempToken, totpToken } = req.body;
+      
+      if (!tempToken || !totpToken) {
+        return res.status(400).json({ error: "Token and TOTP code required" });
+      }
+      
+      const decoded = verifyAdminJWT(tempToken);
+      if (!decoded) {
+        return res.status(401).json({ error: "Invalid or expired token" });
+      }
+      
+      // Get admin user
+      const [admin] = await db.select().from(adminUsers).where(eq(adminUsers.id, decoded.adminId));
+      if (!admin || !admin.totpSecret || !admin.totpEnabled) {
+        return res.status(400).json({ error: "2FA not properly configured" });
+      }
+      
+      // Verify TOTP token
+      const valid = verifyTOTP(totpToken, admin.totpSecret);
+      if (!valid) {
+        return res.status(401).json({ error: "Invalid 2FA code" });
+      }
+      
+      // Update last login
+      await db
+        .update(adminUsers)
+        .set({
+          lastLogin: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(adminUsers.id, decoded.adminId));
+      
+      // Generate final JWT token
+      const authToken = generateAdminJWT(decoded.adminId, decoded.email);
+      
+      res.json({
+        success: true,
+        authToken,
+        email: decoded.email,
+        isSuperAdmin: admin.isSuperAdmin,
+        message: "Login successful"
+      });
+    } catch (error) {
+      console.error("[ADMIN-USER-AUTH] 2FA verify error:", error);
+      res.status(500).json({ error: "2FA verification failed" });
+    }
+  });
+  
+  /**
+   * Create new admin user (super admin only)
+   */
+  app.post("/api/admin-user/create", async (req: any, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) {
+        return res.status(401).json({ error: "Auth token required" });
+      }
+      
+      const token = authHeader.substring(7);
+      const decoded = verifyAdminJWT(token);
+      if (!decoded) {
+        return res.status(401).json({ error: "Invalid or expired token" });
+      }
+      
+      // Verify super admin status
+      const [requestingAdmin] = await db.select().from(adminUsers).where(eq(adminUsers.id, decoded.adminId));
+      if (!requestingAdmin?.isSuperAdmin) {
+        return res.status(403).json({ error: "Only super admins can create new admin users" });
+      }
+      
+      const { email, password } = req.body;
+      
+      if (!email || !password) {
+        return res.status(400).json({ error: "Email and password required" });
+      }
+      
+      // Validate password
+      const validation = validatePasswordStrength(password);
+      if (!validation.valid) {
+        return res.status(400).json({ error: validation.error });
+      }
+      
+      // Hash password
+      const passwordHash = await hashPassword(password);
+      
+      // Create admin user
+      const [newAdmin] = await db
+        .insert(adminUsers)
+        .values({
+          email: email.toLowerCase(),
+          passwordHash,
+          forcePasswordChange: true,
+          isSuperAdmin: false,
+        })
+        .returning();
+      
+      res.json({
+        success: true,
+        admin: {
+          id: newAdmin.id,
+          email: newAdmin.email,
+          created: newAdmin.createdAt,
+        },
+        message: "Admin user created successfully"
+      });
+    } catch (error: any) {
+      console.error("[ADMIN-USER-AUTH] Create admin error:", error);
+      if (error.code === '23505') { // Unique constraint violation
+        return res.status(409).json({ error: "Admin user with this email already exists" });
+      }
+      res.status(500).json({ error: "Failed to create admin user" });
+    }
+  });
+
   // ========== ADMIN AUTHENTICATION ROUTES ==========
   
   /**

@@ -15,9 +15,15 @@ export async function apiRequest(
 ): Promise<Response> {
   const headers: Record<string, string> = data ? { "Content-Type": "application/json" } : {};
   
-  // Add admin password header if available (for admin routes)
+  // Add admin JWT token if available (for admin routes)
+  const adminToken = localStorage.getItem("adminToken");
+  if (adminToken && url.includes("/api/admin")) {
+    headers["Authorization"] = `Bearer ${adminToken}`;
+  }
+  
+  // Legacy admin password header (for old system)
   const adminPassword = localStorage.getItem("adminPassword");
-  if (adminPassword) {
+  if (adminPassword && url.includes("/api/admin")) {
     headers["x-admin-password"] = adminPassword;
   }
   

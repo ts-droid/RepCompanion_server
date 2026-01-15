@@ -59,19 +59,16 @@ function AdminProtectedRoute({ component: Component }: { component: React.Compon
     retry: false,
   });
 
-  // Check for admin password in localStorage
-  const adminPassword = localStorage.getItem("adminPassword");
+  // Check for admin JWT token in localStorage
+  const adminToken = localStorage.getItem("adminToken");
 
   if (profileLoading) {
     return <LoadingSpinner message="Laddar profil..." />;
   }
 
-  if (!profile || !profile.onboardingCompleted) {
-    return <Redirect to="/onboarding" />;
-  }
-
-  // Check admin password and admin role
-  if (!adminPassword || !profile.isAdmin) {
+  // Admin users are separate - don't need regular user profile
+  // Just check if admin token exists
+  if (!adminToken) {
     return <Redirect to="/admin/login" />;
   }
 

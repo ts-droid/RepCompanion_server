@@ -103,6 +103,20 @@ export const userProfiles = pgTable("user_profiles", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Admin users - separate authentication system for dashboard access
+export const adminUsers = pgTable("admin_users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: varchar("email", { length: 255 }).unique().notNull(),
+  passwordHash: text("password_hash").notNull(),
+  forcePasswordChange: boolean("force_password_change").default(true).notNull(),
+  totpSecret: text("totp_secret"), // Base32 encoded secret for Google Authenticator
+  totpEnabled: boolean("totp_enabled").default(false).notNull(),
+  isSuperAdmin: boolean("is_super_admin").default(false).notNull(), // Can create new admins
+  lastLogin: timestamp("last_login"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // Gyms - user's gym locations
 export const gyms = pgTable("gyms", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
