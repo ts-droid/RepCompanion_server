@@ -2473,6 +2473,16 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
+  app.post("/api/admin/exercises", requireAdminAuth, async (req: any, res) => {
+    try {
+      const exercise = await storage.adminCreateExercise(req.body);
+      res.json(exercise);
+    } catch (error: any) {
+      console.error("[ADMIN API] Failed to create exercise:", error);
+      res.status(500).json({ message: error.message || "Failed to create exercise" });
+    }
+  });
+
   app.put("/api/admin/exercises/:id([0-9a-fA-F-]{36})", requireAdminAuth, async (req: any, res) => {
     try {
       const updated = await storage.adminUpdateExercise(req.params.id, req.body);
@@ -2486,8 +2496,9 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     try {
       const alias = await storage.adminCreateExerciseAlias(req.body);
       res.json(alias);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to create exercise alias" });
+    } catch (error: any) {
+      console.error("[ADMIN API] Failed to create exercise alias:", error);
+      res.status(500).json({ message: error.message || "Failed to create exercise alias" });
     }
   });
 
@@ -2504,6 +2515,16 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
       res.json(enhancedData);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch equipment" });
+    }
+  });
+
+  app.post("/api/admin/equipment", requireAdminAuth, async (req: any, res) => {
+    try {
+      const equipment = await storage.adminCreateEquipment(req.body);
+      res.json(equipment);
+    } catch (error: any) {
+      console.error("[ADMIN API] Failed to create equipment:", error);
+      res.status(500).json({ message: error.message || "Failed to create equipment" });
     }
   });
 
@@ -2527,13 +2548,15 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
 
   app.get("/api/admin/gyms", requireAdminAuth, async (req: any, res) => {
     try {
-      const { gyms, users, userEquipment } = await import("@shared/schema");
+      const { gyms, users } = await import("@shared/schema");
       
       const data = await db
         .select({
           id: gyms.id,
           name: gyms.name,
           location: gyms.location,
+          latitude: gyms.latitude,
+          longitude: gyms.longitude,
           userId: gyms.userId,
           userEmail: users.email,
           createdAt: gyms.createdAt,
@@ -2542,17 +2565,15 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
         .leftJoin(users, eq(gyms.userId, users.id))
         .orderBy(desc(gyms.createdAt));
 
-      // Fetch equipment counts for each gym
+      // Fetch equipment for each gym
       const enhancedData = await Promise.all(
         data.map(async (gym) => {
-          const equipment = await db
-            .select({ count: sql<number>`count(*)` })
-            .from(userEquipment)
-            .where(eq(userEquipment.gymId, gym.id));
+          const equipmentKeys = await storage.adminGetGymEquipment(gym.id);
           
           return {
             ...gym,
-            equipmentCount: Number(equipment[0]?.count || 0),
+            equipmentCount: equipmentKeys.length,
+            equipmentKeys: equipmentKeys,
           };
         })
       );
@@ -2566,7 +2587,8 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
 
   app.put("/api/admin/gyms/:id([0-9a-fA-F-]{36})", requireAdminAuth, async (req: any, res) => {
     try {
-      const updated = await storage.adminUpdateGym(req.params.id, req.body);
+      const { equipmentKeys, ...gymData } = req.body;
+      const updated = await storage.adminUpdateGym(req.params.id, gymData, equipmentKeys);
       res.json(updated);
     } catch (error) {
       res.status(500).json({ message: "Failed to update gym" });

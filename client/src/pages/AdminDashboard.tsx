@@ -17,6 +17,14 @@ import "@/admin.css";
 
 type EnhancedExercise = Exercise & { aliases?: string[] };
 type EnhancedEquipment = EquipmentCatalog & { aliases?: string[] };
+type EnhancedGym = Gym & { equipmentCount?: number; equipmentKeys?: string[]; userEmail?: string };
+
+const suggestId = (name: string) => {
+  return name.toLowerCase()
+    .replace(/[^a-z0-9]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+};
 
 export default function AdminDashboard() {
   const [, setLocation] = useLocation();
@@ -27,10 +35,16 @@ export default function AdminDashboard() {
   // Editing state
   const [editingEx, setEditingEx] = useState<EnhancedExercise | null>(null);
   const [editingEq, setEditingEq] = useState<EnhancedEquipment | null>(null);
-  const [editingGym, setEditingGym] = useState<Gym | null>(null);
+  const [editingGym, setEditingGym] = useState<EnhancedGym | null>(null);
   const [mappingUnmapped, setMappingUnmapped] = useState<UnmappedExercise | null>(null);
   const [newAlias, setNewAlias] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isCreatingNew, setIsCreatingNew] = useState(false);
+  const [newExData, setNewExData] = useState({
+    nameEn: "",
+    category: "strength",
+    exerciseId: ""
+  });
 
   const toggleId = (id: string) => {
     setSelectedIds(prev => 
@@ -75,6 +89,13 @@ export default function AdminDashboard() {
       setEditingEx(null);
       toast({ title: "Övning uppdaterad" });
     },
+    onError: (error: Error) => {
+      toast({ 
+        title: "Kunde inte uppdatera övning", 
+        description: error.message,
+        variant: "destructive"
+      });
+    }
   });
 
   const updateEquipmentMutation = useMutation({
@@ -87,6 +108,59 @@ export default function AdminDashboard() {
       setEditingEq(null);
       toast({ title: "Utrustning uppdaterad" });
     },
+    onError: (error: Error) => {
+      toast({ 
+        title: "Kunde inte uppdatera utrustning", 
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  });
+
+  const updateGymMutation = useMutation({
+    mutationFn: async ({ id, data, equipmentKeys }: { id: string; data: Partial<Gym>; equipmentKeys?: string[] }) => {
+      const res = await apiRequest("PUT", `/api/admin/gyms/${id}`, { ...data, equipmentKeys });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/gyms"] });
+      setEditingGym(null);
+      toast({ title: "Gym uppdaterat" });
+    },
+    onError: (error: Error) => {
+      toast({ 
+        title: "Kunde inte uppdatera gym", 
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  });
+
+  const createExerciseMutation = useMutation({
+    mutationFn: async (data: Partial<Exercise>) => {
+      const res = await apiRequest("POST", "/api/admin/exercises", data);
+      return res.json();
+    },
+    onSuccess: (newEx) => {
+      // After creating the exercise, create the alias automatically
+      if (mappingUnmapped) {
+        createAliasMutation.mutate({
+          exerciseId: newEx.exerciseId || newEx.id,
+          alias: mappingUnmapped.aiName,
+          lang: 'sv'
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/exercises"] });
+      setIsCreatingNew(false);
+      toast({ title: "Ny övning skapad" });
+    },
+    onError: (error: Error) => {
+      toast({ 
+        title: "Kunde inte skapa övning", 
+        description: error.message,
+        variant: "destructive"
+      });
+    }
   });
 
   const deleteMutation = useMutation({
@@ -122,8 +196,15 @@ export default function AdminDashboard() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/exercises"] }); // Refresh so we see new aliases
       setMappingUnmapped(null);
       setNewAlias("");
-      toast({ title: "Alias skapat" });
+      toast({ title: "Alias skapat och övning kopplad" });
     },
+    onError: (error: Error) => {
+      toast({ 
+        title: "Kunde inte skapa alias", 
+        description: error.message,
+        variant: "destructive"
+      });
+    }
   });
 
   const bulkDeleteMutation = useMutation({
@@ -289,7 +370,16 @@ export default function AdminDashboard() {
                         <TableCell className="text-muted-foreground text-sm">{new Date(item.lastSeen).toLocaleDateString()}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            <Button size="sm" onClick={() => setMappingUnmapped(item)} className="hover-elevate">
+                            <Button size="sm" onClick={() => {
+                              setMappingUnmapped(item);
+                              setIsCreatingNew(false);
+                              setNewAlias("");
+                              setNewExData({
+                                nameEn: item.aiName,
+                                category: "strength",
+                                exerciseId: suggestId(item.aiName)
+                              });
+                            }} className="hover-elevate">
                               <Check className="w-4 h-4 mr-2" /> Matcha
                             </Button>
                             <Button 
@@ -361,21 +451,20 @@ export default function AdminDashboard() {
                   <Table>
                     <TableHeader className="bg-muted/30">
                       <TableRow>
-                        <TableHead className="w-12">
-                          <Checkbox 
-                            checked={filteredExercises && filteredExercises.length > 0 && filteredExercises.slice(0, 50).every(i => selectedIds.includes(i.id))}
-                            onCheckedChange={(checked) => {
-                              const slice = filteredExercises?.slice(0, 50) || [];
-                              const sliceIds = slice.map(i => i.id);
-                              if (checked) {
-                                setSelectedIds(prev => Array.from(new Set([...prev, ...sliceIds])));
-                              } else {
-                                setSelectedIds(prev => prev.filter(id => !sliceIds.includes(id)));
-                              }
-                            }}
-                          />
-                        </TableHead>
-                        <TableHead className="w-[80px]">ID</TableHead>
+                         <TableHead className="w-12">
+                           <Checkbox 
+                             checked={filteredExercises && filteredExercises.length > 0 && filteredExercises.every(i => selectedIds.includes(i.id))}
+                             onCheckedChange={(checked) => {
+                               const sliceIds = filteredExercises?.map(i => i.id) || [];
+                               if (checked) {
+                                 setSelectedIds(prev => Array.from(new Set([...prev, ...sliceIds])));
+                               } else {
+                                 setSelectedIds(prev => prev.filter(id => !sliceIds.includes(id)));
+                               }
+                             }}
+                           />
+                         </TableHead>
+                         <TableHead className="w-[120px]">V4 ID</TableHead>
                         <TableHead>Namn (SV)</TableHead>
                         <TableHead>Namn (EN)</TableHead>
                         <TableHead>Kategori</TableHead>
@@ -385,7 +474,7 @@ export default function AdminDashboard() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredExercises?.slice(0, 50).map((ex) => (
+                      {filteredExercises?.map((ex) => (
                         <TableRow key={ex.id} className="admin-table-row">
                           <TableCell>
                             <Checkbox 
@@ -393,9 +482,13 @@ export default function AdminDashboard() {
                               onCheckedChange={() => toggleId(ex.id)}
                             />
                           </TableCell>
-                          <TableCell className="text-[10px] font-mono text-muted-foreground">
-                            {ex.id.substring(0, 8)}
-                          </TableCell>
+                           <TableCell className="text-xs font-mono">
+                             {ex.exerciseId ? (
+                               <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20">{ex.exerciseId}</Badge>
+                             ) : (
+                               <Badge variant="destructive" className="animate-pulse">SAKNAS!</Badge>
+                             )}
+                           </TableCell>
                           <TableCell className="font-semibold">
                             <div className="flex flex-col">
                               <span>{ex.name}</span>
@@ -616,6 +709,9 @@ export default function AdminDashboard() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
+                            <Button variant="ghost" size="icon" onClick={() => setEditingGym(gym)} className="hover:bg-primary/10 hover:text-primary transition-colors">
+                              <Edit className="w-4 h-4" />
+                            </Button>
                             <Button variant="ghost" size="icon" onClick={() => confirm("Ta bort gym?") && deleteMutation.mutate({ type: 'gyms', id: gym.id })} className="hover:bg-destructive/10 hover:text-destructive flex items-center h-8 w-8 transition-colors">
                               <Trash2 className="w-4 h-4" />
                             </Button>
@@ -635,39 +731,150 @@ export default function AdminDashboard() {
       <Dialog open={!!mappingUnmapped} onOpenChange={() => setMappingUnmapped(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Matcha AI-övning</DialogTitle>
+            <DialogTitle>{isCreatingNew ? "Skapa ny övning" : "Matcha AI-övning"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="p-3 bg-muted rounded-lg">
               <p className="text-sm font-medium">AI föreslog:</p>
-              <p className="text-lg">{mappingUnmapped?.aiName}</p>
+              <p className="text-lg font-bold">{mappingUnmapped?.aiName}</p>
             </div>
             
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Välj befintlig övning att koppla till:</label>
-              <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" 
-                onChange={(e) => setNewAlias(e.target.value)}
-                value={newAlias}
-              >
-                <option value="">Välj övning...</option>
-                {exercises?.map(ex => (
-                  <option key={ex.id} value={ex.exerciseId || ""}>{ex.name} ({ex.exerciseId})</option>
-                ))}
-              </select>
-            </div>
+            {!isCreatingNew ? (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Välj befintlig övning att koppla till:</label>
+                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" 
+                    onChange={(e) => setNewAlias(e.target.value)}
+                    value={newAlias}
+                  >
+                    <option value="">Välj övning...</option>
+                    {exercises?.map(ex => (
+                      <option key={ex.id} value={ex.id}>{ex.name} {ex.exerciseId ? `(${ex.exerciseId})` : "(Saknar V4 ID!)"}</option>
+                    ))}
+                  </select>
+                </div>
+                {newAlias && !exercises?.find(e => e.id === newAlias)?.exerciseId && (
+                  <div className="space-y-2 p-3 bg-destructive/10 rounded-lg border border-destructive/20 animate-in fade-in zoom-in-95">
+                    <label className="text-xs font-bold text-destructive flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" /> KRÄVER V4 ID: Denna övning saknar ID!
+                    </label>
+                    <Input 
+                      placeholder="t.ex. dips_assisted"
+                      className="h-8 text-xs border-destructive/30 focus-visible:ring-destructive"
+                      value={newExData.exerciseId}
+                      onChange={(e) => setNewExData(prev => ({ ...prev, exerciseId: e.target.value }))}
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      Ange ett unikt ID för att kunna matcha övningen.
+                    </p>
+                  </div>
+                )}
+                <div className="flex flex-col items-center gap-2 pt-2 border-t mt-4">
+                  <p className="text-xs text-muted-foreground">Hittar du inte övningen?</p>
+                  <Button variant="outline" size="sm" onClick={() => {
+                    setIsCreatingNew(true);
+                    setNewExData({
+                      nameEn: mappingUnmapped?.aiName || "",
+                      category: "strength",
+                      exerciseId: suggestId(mappingUnmapped?.aiName || "")
+                    });
+                  }}>
+                    <Plus className="w-4 h-4 mr-2" /> Skapa som ny övning
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Namn (EN)</label>
+                  <Input 
+                    value={newExData.nameEn} 
+                    onChange={(e) => setNewExData(prev => ({ ...prev, nameEn: e.target.value }))}
+                    placeholder="Engelskt namn för katalogen"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">V4 Exercise ID (t.ex. bench_press)</label>
+                  <Input 
+                    value={newExData.exerciseId} 
+                    onChange={(e) => setNewExData(prev => ({ ...prev, exerciseId: e.target.value }))}
+                    placeholder="Unikt ID för systemet"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Kategori</label>
+                  <select 
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    value={newExData.category}
+                    onChange={(e) => setNewExData(prev => ({ ...prev, category: e.target.value }))}
+                  >
+                    <option value="strength">Strength</option>
+                    <option value="cardio">Cardio</option>
+                    <option value="stretching">Stretching</option>
+                    <option value="mobility">Mobility</option>
+                  </select>
+                </div>
+                <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => setIsCreatingNew(false)}>
+                  Tillbaka till matcha befintlig
+                </Button>
+              </div>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setMappingUnmapped(null)}>Avbryt</Button>
-            <Button 
-              disabled={!newAlias || createAliasMutation.isPending}
-              onClick={() => mappingUnmapped && createAliasMutation.mutate({ 
-                exerciseId: newAlias, 
-                alias: mappingUnmapped.aiName,
-                lang: 'en' 
-              })}
-            >
-              Skapa Alias & Koppla
-            </Button>
+            <Button variant="outline" onClick={() => {
+              setMappingUnmapped(null);
+              setIsCreatingNew(false);
+            }}>Avbryt</Button>
+            
+            {!isCreatingNew ? (
+              <Button 
+                disabled={!newAlias || (exercises?.find(e => e.id === newAlias)?.exerciseId ? false : !newExData.exerciseId) || createAliasMutation.isPending || updateExerciseMutation.isPending}
+                onClick={async () => {
+                  if (mappingUnmapped && newAlias) {
+                    const selectedEx = exercises?.find(e => e.id === newAlias);
+                    let finalId = selectedEx?.exerciseId;
+                    
+                    // If no V4 ID exists, update the exercise first
+                    if (!finalId && newExData.exerciseId) {
+                      try {
+                        await updateExerciseMutation.mutateAsync({
+                          id: selectedEx!.id,
+                          data: { exerciseId: newExData.exerciseId }
+                        });
+                        finalId = newExData.exerciseId;
+                      } catch (e) {
+                        return; // Toast handled by mutation
+                      }
+                    }
+
+                    if (finalId) {
+                      createAliasMutation.mutate({ 
+                        exerciseId: finalId, 
+                        alias: mappingUnmapped.aiName,
+                        lang: 'sv' 
+                      });
+                    }
+                  }
+                }}
+              >
+                {createAliasMutation.isPending || updateExerciseMutation.isPending ? "Sparar..." : "Skapa Alias & Koppla"}
+              </Button>
+            ) : (
+              <Button 
+                disabled={!newExData.nameEn || !newExData.exerciseId || createExerciseMutation.isPending}
+                onClick={() => createExerciseMutation.mutate({
+                  name: mappingUnmapped?.aiName, // Primary name is Swedish from AI usually
+                  nameEn: newExData.nameEn,
+                  category: newExData.category,
+                  exerciseId: newExData.exerciseId,
+                  difficulty: 'intermediate',
+                  primaryMuscles: ['unknown'],
+                  requiredEquipment: ['unknown'],
+                })}
+              >
+                {createExerciseMutation.isPending ? "Skapar..." : "Skapa & Koppla"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -723,7 +930,7 @@ export default function AdminDashboard() {
                     name, 
                     nameEn, 
                     category, 
-                    exerciseId, 
+                    exerciseId: exerciseId || null, 
                     requiredEquipment,
                     youtubeUrl: youtubeUrl || null
                   } 
@@ -775,6 +982,77 @@ export default function AdminDashboard() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Edit Gym Dialog */}
+      <Dialog open={!!editingGym} onOpenChange={() => setEditingGym(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Redigera Gym</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Namn</label>
+              <Input 
+                value={editingGym?.name || ""} 
+                onChange={(e) => setEditingGym(prev => prev ? { ...prev, name: e.target.value } : null)}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Plats / Adress</label>
+              <Input 
+                value={editingGym?.location || ""} 
+                onChange={(e) => setEditingGym(prev => prev ? { ...prev, location: e.target.value } : null)}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Latitud</label>
+                <Input 
+                  value={editingGym?.latitude || ""} 
+                  onChange={(e) => setEditingGym(prev => prev ? { ...prev, latitude: e.target.value } : null)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Longitud</label>
+                <Input 
+                  value={editingGym?.longitude || ""} 
+                  onChange={(e) => setEditingGym(prev => prev ? { ...prev, longitude: e.target.value } : null)}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Utrustningsnycklar (kommaseparerade)</label>
+              <textarea 
+                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                value={editingGym?.equipmentKeys?.join(", ") || ""} 
+                onChange={(e) => setEditingGym(prev => prev ? { ...prev, equipmentKeys: e.target.value.split(",").map(k => k.trim()).filter(Boolean) } : null)}
+                placeholder="t.ex. barbell, dumbbells, rack"
+              />
+              <p className="text-[10px] text-muted-foreground italic">
+                Spara tom för att rensa all utrustning.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingGym(null)}>Avbryt</Button>
+            <Button 
+              onClick={() => {
+                if (editingGym) {
+                  const { equipmentKeys, id, ...rest } = editingGym;
+                  updateGymMutation.mutate({ 
+                    id, 
+                    data: rest, 
+                    equipmentKeys 
+                  });
+                }
+              }}
+              disabled={updateGymMutation.isPending}
+            >
+              Spara ändringar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

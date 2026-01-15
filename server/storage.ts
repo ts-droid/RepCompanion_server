@@ -1747,10 +1747,22 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  async adminCreateExercise(data: import("@shared/schema").InsertExercise): Promise<import("@shared/schema").Exercise> {
+    const { exercises } = await import("@shared/schema");
+    const [inserted] = await db.insert(exercises).values(data).returning();
+    return inserted;
+  }
+
   async adminCreateExerciseAlias(data: import("@shared/schema").InsertExerciseAlias): Promise<import("@shared/schema").ExerciseAlias> {
     const { exerciseAliases } = await import("@shared/schema");
     const [alias] = await db.insert(exerciseAliases).values(data).returning();
     return alias;
+  }
+
+  async adminCreateEquipment(data: import("@shared/schema").InsertEquipmentCatalog): Promise<import("@shared/schema").EquipmentCatalog> {
+    const { equipmentCatalog } = await import("@shared/schema");
+    const [inserted] = await db.insert(equipmentCatalog).values(data).returning();
+    return inserted;
   }
 
   async adminGetAllEquipment(): Promise<import("@shared/schema").EquipmentCatalog[]> {
@@ -1775,10 +1787,41 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(gyms).orderBy(gyms.name);
   }
 
-  async adminUpdateGym(id: string, data: Partial<import("@shared/schema").Gym>): Promise<import("@shared/schema").Gym> {
-    const { gyms } = await import("@shared/schema");
+  async adminUpdateGym(id: string, data: Partial<import("@shared/schema").Gym>, equipmentKeys?: string[]): Promise<import("@shared/schema").Gym> {
+    const { gyms, userEquipment, equipmentCatalog } = await import("@shared/schema");
     const [updated] = await db.update(gyms).set(data).where(eq(gyms.id, id)).returning();
+    
+    if (equipmentKeys && updated) {
+      // Sync equipment
+      // 1. Delete existing equipment for this gym
+      await db.delete(userEquipment).where(eq(userEquipment.gymId, id));
+      
+      // 2. Fetch catalog info for the keys to populate name/type
+      if (equipmentKeys.length > 0) {
+        const catalogItems = await db.select().from(equipmentCatalog).where(inArray(equipmentCatalog.equipmentKey, equipmentKeys));
+        
+        const newEquipment = catalogItems.map(item => ({
+          userId: updated.userId,
+          gymId: updated.id,
+          equipmentType: item.category,
+          equipmentName: item.name,
+          equipmentKey: item.equipmentKey,
+          available: true
+        }));
+        
+        if (newEquipment.length > 0) {
+          await db.insert(userEquipment).values(newEquipment);
+        }
+      }
+    }
+    
     return updated;
+  }
+
+  async adminGetGymEquipment(gymId: string): Promise<string[]> {
+    const { userEquipment } = await import("@shared/schema");
+    const eqList = await db.select().from(userEquipment).where(eq(userEquipment.gymId, gymId));
+    return eqList.map(e => e.equipmentKey).filter((key): key is string => key !== null);
   }
 
   async adminDeleteExercise(id: string): Promise<void> {
