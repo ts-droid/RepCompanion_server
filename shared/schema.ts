@@ -96,6 +96,9 @@ export const userProfiles = pgTable("user_profiles", {
   programGenerationsThisWeek: integer("program_generations_this_week").default(0),
   weekStartDate: timestamp("week_start_date"),
   
+  // Admin access
+  isAdmin: boolean("is_admin").default(false).notNull(),
+  
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

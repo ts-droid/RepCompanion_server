@@ -2528,6 +2528,68 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
+  // ========== ADMIN AUTHENTICATION ROUTES ==========
+  
+  /**
+   * Admin login endpoint - verifies password and checks isAdmin flag
+   */
+  app.post("/api/admin/auth/login", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const { password } = req.body;
+      const adminPassword = process.env.ADMIN_PASSWORD || "admin123";
+      
+      if (password !== adminPassword) {
+        return res.status(401).json({ error: "Invalid admin password" });
+      }
+      
+      // Check if user has admin role
+      const userId = req.user?.userId;
+      if (!userId) {
+        return res.status(401).json({ error: "User not authenticated" });
+      }
+      
+      const userProfile = await storage.getUserProfile(userId);
+      if (!userProfile?.isAdmin) {
+        return res.status(403).json({ error: "User is not an admin" });
+      }
+      
+      // Store admin password in session (if using express-session)
+      // For now, client will store password in localStorage and send via header
+      res.json({ 
+        success: true, 
+        message: "Admin authenticated successfully",
+        adminPassword: password // Return for client to store
+      });
+    } catch (error) {
+      console.error("[ADMIN AUTH] Login error:", error);
+      res.status(500).json({ error: "Admin login failed" });
+    }
+  });
+  
+  /**
+   * Set user as admin (protected endpoint)
+   */
+  app.post("/api/admin/users/:userId/set-admin", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const { userId: targetUserId } = req.params;
+      const { password, isAdmin } = req.body;
+      
+      // Require admin password to modify admin status
+      const adminPassword = process.env.ADMIN_PASSWORD || "admin123";
+      if (password !== adminPassword) {
+        return res.status(401).json({ error: "Invalid admin password" });
+      }
+      
+      await storage.setUserAdminStatus(targetUserId, isAdmin !== false);
+      res.json({ success: true, message: `User admin status updated to ${isAdmin !== false}` });
+    } catch (error) {
+      console.error("[ADMIN] Set admin error:", error);
+      res.status(500).json({ error: "Failed to update admin status" });
+    }
+  });
+
+  // ========== ADMIN DATA ROUTES ==========
+
   app.get("/api/admin/stats", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const usersCount = await storage.adminGetUsersCount();

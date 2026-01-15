@@ -153,6 +153,9 @@ export interface IStorage {
 
   incrementProgramGeneration(userId: string): Promise<void>;
   
+  // Admin operations
+  setUserAdminStatus(userId: string, isAdmin: boolean): Promise<void>;
+  
   // V4 specific operations
   getUserTimeModel(userId: string): Promise<import("@shared/schema").UserTimeModel | undefined>;
   getExercisesByIds(ids: string[]): Promise<any[]>;
@@ -1660,6 +1663,23 @@ export class DatabaseStorage implements IStorage {
     }
     
     console.log(`[STORAGE] Program generation counter updated to ${result[0].programGenerationsThisWeek}/5 for user ${userId}`);
+  }
+
+  async setUserAdminStatus(userId: string, isAdmin: boolean): Promise<void> {
+    const result = await db
+      .update(userProfiles)
+      .set({
+        isAdmin,
+        updatedAt: new Date(),
+      })
+      .where(eq(userProfiles.userId, userId))
+      .returning();
+
+    if (result.length === 0) {
+      throw new Error(`User profile not found for userId: ${userId}`);
+    }
+
+    console.log(`[STORAGE] Admin status for user ${userId} set to: ${isAdmin}`);
   }
 
   private getWeekStart(date: Date): Date {

@@ -22,6 +22,7 @@ import SessionComplete from "@/pages/SessionComplete";
 import SessionDetails from "@/pages/SessionDetails";
 import Progress from "@/pages/Progress";
 import AdminDashboard from "@/pages/AdminDashboard";
+import AdminLogin from "@/pages/AdminLogin";
 import NotFound from "@/pages/not-found";
 
 function LoadingSpinner({ message = "Laddar..." }: { message?: string }) {
@@ -52,6 +53,31 @@ function ProtectedRoute({ component: Component, params }: { component: React.Com
   return <Component {...params} />;
 }
 
+function AdminProtectedRoute({ component: Component }: { component: React.ComponentType<any> }) {
+  const { data: profile, isLoading: profileLoading } = useQuery<UserProfile | null>({
+    queryKey: ["/api/profile"],
+    retry: false,
+  });
+
+  // Check for admin password in localStorage
+  const adminPassword = localStorage.getItem("adminPassword");
+
+  if (profileLoading) {
+    return <LoadingSpinner message="Laddar profil..." />;
+  }
+
+  if (!profile || !profile.onboardingCompleted) {
+    return <Redirect to="/onboarding" />;
+  }
+
+  // Check admin password and admin role
+  if (!adminPassword || !profile.isAdmin) {
+    return <Redirect to="/admin/login" />;
+  }
+
+  return <Component />;
+}
+
 function Router() {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
 
@@ -76,6 +102,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/dev-onboarding" component={Onboarding} />
+      <Route path="/admin/login" component={AdminLogin} />
       {!isAuthenticated ? (
         <Route path="/" component={Landing} />
       ) : (
@@ -95,7 +122,7 @@ function Router() {
           <Route path="/session/complete">{() => <ProtectedRoute component={SessionComplete} />}</Route>
           <Route path="/session/:sessionId">{(params) => <ProtectedRoute component={SessionDetails} params={params} />}</Route>
           <Route path="/progress">{() => <ProtectedRoute component={Progress} />}</Route>
-          <Route path="/admin">{() => <ProtectedRoute component={AdminDashboard} />}</Route>
+          <Route path="/admin">{() => <AdminProtectedRoute component={AdminDashboard} />}</Route>
           <Route path="/onboarding" component={Onboarding} />
         </>
       )}

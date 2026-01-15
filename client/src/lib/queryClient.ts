@@ -13,9 +13,17 @@ export async function apiRequest(
   data?: unknown | undefined,
   signal?: AbortSignal,
 ): Promise<Response> {
+  const headers: Record<string, string> = data ? { "Content-Type": "application/json" } : {};
+  
+  // Add admin password header if available (for admin routes)
+  const adminPassword = localStorage.getItem("adminPassword");
+  if (adminPassword) {
+    headers["x-admin-password"] = adminPassword;
+  }
+  
   const res = await fetch(url, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers,
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
     signal,
