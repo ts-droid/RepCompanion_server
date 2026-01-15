@@ -100,6 +100,7 @@ function Router() {
     <Switch>
       <Route path="/dev-onboarding" component={Onboarding} />
       <Route path="/admin/login" component={AdminLogin} />
+      <Route path="/admin">{() => <AdminProtectedRoute component={AdminDashboard} />}</Route>
       {!isAuthenticated ? (
         <Route path="/" component={Landing} />
       ) : (
@@ -119,7 +120,6 @@ function Router() {
           <Route path="/session/complete">{() => <ProtectedRoute component={SessionComplete} />}</Route>
           <Route path="/session/:sessionId">{(params) => <ProtectedRoute component={SessionDetails} params={params} />}</Route>
           <Route path="/progress">{() => <ProtectedRoute component={Progress} />}</Route>
-          <Route path="/admin">{() => <AdminProtectedRoute component={AdminDashboard} />}</Route>
           <Route path="/onboarding" component={Onboarding} />
         </>
       )}
