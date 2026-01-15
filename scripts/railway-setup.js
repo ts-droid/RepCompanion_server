@@ -1,98 +1,11 @@
 #!/usr/bin/env node
-var __defProp = Object.defineProperty;
-var __export = (target, all) => {
-  for (var name in all)
-    __defProp(target, name, { get: all[name], enumerable: true });
-};
 
 // scripts/railway-setup.ts
-import { drizzle as drizzle2 } from "drizzle-orm/neon-http";
-import { neon } from "@neondatabase/serverless";
-import { migrate } from "drizzle-orm/neon-http/migrator";
-
-// server/db.ts
 import { drizzle } from "drizzle-orm/node-postgres";
 import pkg from "pg";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
 
 // shared/schema.ts
-var schema_exports = {};
-__export(schema_exports, {
-  adminUsers: () => adminUsers,
-  affiliateClicks: () => affiliateClicks,
-  alternativeExerciseSchema: () => alternativeExerciseSchema,
-  candidatePools: () => candidatePools,
-  equipmentAliases: () => equipmentAliases,
-  equipmentCatalog: () => equipmentCatalog,
-  exerciseAliases: () => exerciseAliases,
-  exerciseCaps: () => exerciseCaps,
-  exerciseLogs: () => exerciseLogs,
-  exerciseStats: () => exerciseStats,
-  exercises: () => exercises,
-  generateProgramRequestSchema: () => generateProgramRequestSchema,
-  gymPrograms: () => gymPrograms,
-  gyms: () => gyms,
-  healthConnectionStatusEnum: () => healthConnectionStatusEnum,
-  healthConnections: () => healthConnections,
-  healthMetricTypeEnum: () => healthMetricTypeEnum,
-  healthMetrics: () => healthMetrics,
-  healthPlatformEnum: () => healthPlatformEnum,
-  healthSyncLogs: () => healthSyncLogs,
-  insertAffiliateClickSchema: () => insertAffiliateClickSchema,
-  insertCandidatePoolSchema: () => insertCandidatePoolSchema,
-  insertEquipmentAliasSchema: () => insertEquipmentAliasSchema,
-  insertEquipmentCatalogSchema: () => insertEquipmentCatalogSchema,
-  insertEquipmentSchema: () => insertEquipmentSchema,
-  insertExerciseAliasSchema: () => insertExerciseAliasSchema,
-  insertExerciseCapSchema: () => insertExerciseCapSchema,
-  insertExerciseLogSchema: () => insertExerciseLogSchema,
-  insertExerciseSchema: () => insertExerciseSchema,
-  insertExerciseStatsSchema: () => insertExerciseStatsSchema,
-  insertGymProgramSchema: () => insertGymProgramSchema,
-  insertGymSchema: () => insertGymSchema,
-  insertHealthConnectionSchema: () => insertHealthConnectionSchema,
-  insertHealthMetricSchema: () => insertHealthMetricSchema,
-  insertHealthSyncLogSchema: () => insertHealthSyncLogSchema,
-  insertNotificationPreferencesSchema: () => insertNotificationPreferencesSchema,
-  insertNotificationScheduleSchema: () => insertNotificationScheduleSchema,
-  insertProfileTrainingTipSchema: () => insertProfileTrainingTipSchema,
-  insertProgramTemplateExerciseSchema: () => insertProgramTemplateExerciseSchema,
-  insertProgramTemplateSchema: () => insertProgramTemplateSchema,
-  insertPromoContentSchema: () => insertPromoContentSchema,
-  insertPromoImpressionSchema: () => insertPromoImpressionSchema,
-  insertTrainingTipSchema: () => insertTrainingTipSchema,
-  insertUnmappedExerciseSchema: () => insertUnmappedExerciseSchema,
-  insertUserProfileSchema: () => insertUserProfileSchema,
-  insertUserSubscriptionSchema: () => insertUserSubscriptionSchema,
-  insertUserTimeModelSchema: () => insertUserTimeModelSchema,
-  insertWorkoutSessionSchema: () => insertWorkoutSessionSchema,
-  notificationPreferences: () => notificationPreferences,
-  notificationSchedule: () => notificationSchedule,
-  profileTrainingTips: () => profileTrainingTips,
-  programTemplateExercises: () => programTemplateExercises,
-  programTemplates: () => programTemplates,
-  promoContent: () => promoContent,
-  promoIdParamSchema: () => promoIdParamSchema,
-  promoImpressions: () => promoImpressions,
-  promoPlacementParamSchema: () => promoPlacementParamSchema,
-  sessions: () => sessions,
-  suggestAlternativeRequestSchema: () => suggestAlternativeRequestSchema,
-  suggestAlternativeResponseSchema: () => suggestAlternativeResponseSchema,
-  trackAffiliateClickSchema: () => trackAffiliateClickSchema,
-  trackPromoImpressionSchema: () => trackPromoImpressionSchema,
-  trainingTips: () => trainingTips,
-  unmappedExercises: () => unmappedExercises,
-  updateExerciseLogSchema: () => updateExerciseLogSchema,
-  updateGymSchema: () => updateGymSchema,
-  updateHealthConnectionSchema: () => updateHealthConnectionSchema,
-  updateNotificationPreferencesSchema: () => updateNotificationPreferencesSchema,
-  updateUserProfileSchema: () => updateUserProfileSchema,
-  userEquipment: () => userEquipment,
-  userProfiles: () => userProfiles,
-  userSubscriptions: () => userSubscriptions,
-  userTimeModel: () => userTimeModel,
-  users: () => users,
-  workoutSessions: () => workoutSessions
-});
 import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, timestamp, integer, boolean, index, jsonb, unique, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
@@ -660,18 +573,6 @@ var insertUnmappedExerciseSchema = createInsertSchema(unmappedExercises).omit({
 });
 var healthPlatformEnum = ["apple_health", "google_fit", "samsung_health", "fitbit", "oura", "whoop", "garmin"];
 var healthConnectionStatusEnum = ["active", "disconnected", "error", "pending"];
-var healthMetricTypeEnum = [
-  "steps",
-  "calories_burned",
-  "active_minutes",
-  "distance_meters",
-  "sleep_duration_minutes",
-  "sleep_quality_score",
-  "heart_rate_avg",
-  "heart_rate_resting",
-  "heart_rate_variability",
-  "vo2_max"
-];
 var healthConnections = pgTable("health_connections", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
@@ -803,37 +704,9 @@ var promoPlacementParamSchema = z.object({
   placement: z.string().min(1)
 });
 
-// server/db.ts
-var { Pool } = pkg;
-if (!process.env.DATABASE_URL) {
-  throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?"
-  );
-}
-var databaseUrl = process.env.DATABASE_URL;
-var urlMatch = databaseUrl.match(/postgresql:\/\/[^\s']+/);
-if (urlMatch) {
-  databaseUrl = urlMatch[0];
-}
-var anonymizedUrl = databaseUrl.replace(/:[^:@]+@/, ":****@");
-console.log(`[DB] Initializing connection to: ${anonymizedUrl}`);
-var pool = new Pool({
-  connectionString: databaseUrl,
-  max: 20,
-  // Maximum number of clients in the pool
-  idleTimeoutMillis: 3e4,
-  // Close idle clients after 30 seconds
-  connectionTimeoutMillis: 5e3,
-  // Return an error after 5 seconds if connection cannot be established
-  ssl: databaseUrl.includes("sslmode=require") ? { rejectUnauthorized: false } : void 0
-});
-pool.on("error", (err) => {
-  console.error("[DB] Unexpected pool error:", err);
-});
-var db = drizzle(pool, { schema: schema_exports });
-
 // scripts/railway-setup.ts
 import { eq } from "drizzle-orm";
+var { Pool } = pkg;
 async function runSetup() {
   console.log("[RAILWAY-SETUP] \u{1F680} Starting database setup...");
   if (!process.env.DATABASE_URL) {
@@ -842,9 +715,11 @@ async function runSetup() {
   }
   try {
     console.log("[RAILWAY-SETUP] \u{1F4C2} Running migrations...");
-    const sql2 = neon(process.env.DATABASE_URL);
-    const db2 = drizzle2(sql2);
-    await migrate(db2, { migrationsFolder: "./migrations" });
+    const pool = new Pool({
+      connectionString: process.env.DATABASE_URL
+    });
+    const db = drizzle(pool);
+    await migrate(db, { migrationsFolder: "./migrations" });
     console.log("[RAILWAY-SETUP] \u2705 Migrations completed!");
     console.log("[RAILWAY-SETUP] \u{1F331} Checking for default admin...");
     const defaultEmail = "thomas@recompute.it";

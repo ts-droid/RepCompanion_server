@@ -4,10 +4,10 @@
  * This script should be run once after deployment to set up the database
  */
 
-import { drizzle } from 'drizzle-orm/neon-http';
-import { neon } from '@neondatabase/serverless';
-import { migrate } from 'drizzle-orm/neon-http/migrator';
-import { db as dbInstance } from '../server/db.js';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import pkg from 'pg';
+const { Pool } = pkg;
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { adminUsers } from '../shared/schema.js';
 import { eq } from 'drizzle-orm';
 
@@ -20,10 +20,12 @@ async function runSetup() {
   }
 
   try {
-    // Step 1: Run migrations
+    // Step 1: Run migrations using node-postgres
     console.log('[RAILWAY-SETUP] 📂 Running migrations...');
-    const sql = neon(process.env.DATABASE_URL);
-    const db = drizzle(sql);
+    const pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+    });
+    const db = drizzle(pool);
     await migrate(db, { migrationsFolder: './migrations' });
     console.log('[RAILWAY-SETUP] ✅ Migrations completed!');
 
@@ -31,7 +33,7 @@ async function runSetup() {
     console.log('[RAILWAY-SETUP] 🌱 Checking for default admin...');
     const defaultEmail = "thomas@recompute.it";
     
-    const [existing] = await dbInstance
+    const [existing] = await db
       .select()
       .from(adminUsers)
       .where(eq(adminUsers.email, defaultEmail));
@@ -43,7 +45,7 @@ async function runSetup() {
       const bcrypt = await import('bcrypt');
       const passwordHash = await bcrypt.hash("qwerty123456", 10);
       
-      await dbInstance.insert(adminUsers).values({
+      await db.insert(adminUsers).values({
         email: defaultEmail,
         passwordHash,
         forcePasswordChange: true,
