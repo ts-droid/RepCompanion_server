@@ -1,6 +1,7 @@
 import bcrypt from 'bcrypt';
 import speakeasy from 'speakeasy';
 import QRCode from 'qrcode';
+import jwt from 'jsonwebtoken';
 
 const SALT_ROUNDS = 12;
 
@@ -83,7 +84,6 @@ export function verifyTOTP(token: string, secret: string): boolean {
  * Generate JWT token for admin session
  */
 export function generateAdminJWT(adminId: string, email: string): string {
-  const jwt = require('jsonwebtoken');
   const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
   
   return jwt.sign(
@@ -102,10 +102,9 @@ export function generateAdminJWT(adminId: string, email: string): string {
  */
 export function verifyAdminJWT(token: string): { adminId: string; email: string } | null {
   try {
-    const jwt = require('jsonwebtoken');
     const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
     
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
     
     if (decoded.type !== 'admin') {
       return null;
