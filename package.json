@@ -6,11 +6,12 @@
   "scripts": {
     "dev": "NODE_ENV=development tsx server/index.ts",
     "build": "vite build && echo 'Vite done, starting esbuild...' && rm -f dist/app.js && esbuild server/index.ts --platform=node --packages=external --external:./vite --external:./vite.ts --external:../vite --external:../vite.config --bundle --format=esm --outfile=dist/app.js --log-level=warning && echo 'Build complete!' && ls -lh dist/app.js",
-    "start": "NODE_ENV=production node dist/app.js",
+    "start": "npm run db:migrate && npm run db:seed && NODE_ENV=production node dist/app.js",
     "check": "tsc",
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:seed": "tsx scripts/seed-default-admin.ts",
     "db:backup": "node scripts/auto-db-backup.js",
     "db:watch": "nodemon --watch shared/schema.ts --exec 'npm run db:backup'",
     "db:migrate-to-railway": "tsx scripts/migrate-to-railway.ts",
