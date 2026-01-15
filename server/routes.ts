@@ -2582,6 +2582,15 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
+  app.delete("/api/admin/unmapped-exercises/:id([0-9a-fA-F-]{36})", requireAdminAuth, async (req: any, res) => {
+    try {
+      await storage.adminDeleteUnmappedExercise(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete unmapped exercise" });
+    }
+  });
+
   app.delete("/api/admin/equipment/:id([0-9a-fA-F-]{36})", requireAdminAuth, async (req: any, res) => {
     try {
       await storage.adminDeleteEquipmentCatalog(req.params.id);

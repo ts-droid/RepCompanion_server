@@ -1786,6 +1786,11 @@ export class DatabaseStorage implements IStorage {
     await db.delete(exercises).where(eq(exercises.id, id));
   }
 
+  async adminDeleteUnmappedExercise(id: string): Promise<void> {
+    const { unmappedExercises } = await import("@shared/schema");
+    await db.delete(unmappedExercises).where(eq(unmappedExercises.id, id));
+  }
+
   async adminDeleteEquipmentCatalog(id: string): Promise<void> {
     const { equipmentCatalog } = await import("@shared/schema");
     await db.delete(equipmentCatalog).where(eq(equipmentCatalog.id, id));

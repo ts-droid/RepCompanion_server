@@ -77,13 +77,20 @@ export default function AdminDashboard() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async ({ type, id }: { type: 'exercises' | 'equipment' | 'gyms'; id: string }) => {
+    mutationFn: async ({ type, id }: { type: 'exercises' | 'equipment' | 'gyms' | 'unmapped-exercises'; id: string }) => {
       const res = await apiRequest("DELETE", `/api/admin/${type}/${id}`, undefined);
       return res.json();
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: [`/api/admin/${variables.type}`] });
-      toast({ title: `${variables.type === 'exercises' ? 'Övning' : variables.type === 'equipment' ? 'Utrustning' : 'Gym'} borttagen` });
+      toast({ 
+        title: `${
+          variables.type === 'exercises' ? 'Övning' : 
+          variables.type === 'equipment' ? 'Utrustning' : 
+          variables.type === 'gyms' ? 'Gym' : 
+          'Omatchad övning'
+        } borttagen` 
+      });
     },
   });
 
@@ -204,9 +211,19 @@ export default function AdminDashboard() {
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">{new Date(item.lastSeen).toLocaleDateString()}</TableCell>
                         <TableCell className="text-right">
-                          <Button size="sm" onClick={() => setMappingUnmapped(item)} className="hover-elevate">
-                            <Check className="w-4 h-4 mr-2" /> Matcha
-                          </Button>
+                          <div className="flex justify-end gap-2">
+                            <Button size="sm" onClick={() => setMappingUnmapped(item)} className="hover-elevate">
+                              <Check className="w-4 h-4 mr-2" /> Matcha
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              onClick={() => confirm("Ta bort omatchad övning?") && deleteMutation.mutate({ type: 'unmapped-exercises', id: item.id })}
+                              className="hover:bg-destructive/10 hover:text-destructive transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
