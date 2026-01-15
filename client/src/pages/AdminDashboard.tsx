@@ -23,6 +23,7 @@ export default function AdminDashboard() {
   // Editing state
   const [editingEx, setEditingEx] = useState<Exercise | null>(null);
   const [editingEq, setEditingEq] = useState<EquipmentCatalog | null>(null);
+  const [editingGym, setEditingGym] = useState<Gym | null>(null);
   const [mappingUnmapped, setMappingUnmapped] = useState<UnmappedExercise | null>(null);
   const [newAlias, setNewAlias] = useState("");
 
@@ -72,7 +73,19 @@ export default function AdminDashboard() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async ({ type, id }: { type: 'exercises' | 'equipment' | 'gyms'; id: string }) => {
+      const res = await apiRequest("DELETE", `/api/admin/${type}/${id}`, undefined);
+      return res.json();
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/admin/${variables.type}`] });
+      toast({ title: `${variables.type === 'exercises' ? 'Övning' : variables.type === 'equipment' ? 'Utrustning' : 'Gym'} borttagen` });
+    },
+  });
+
   const createAliasMutation = useMutation({
+    // ... same as before
     mutationFn: async (data: { exerciseId: string; alias: string; lang: string }) => {
       const res = await apiRequest("POST", "/api/admin/exercise-aliases", {
         ...data,
@@ -83,6 +96,7 @@ export default function AdminDashboard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/unmapped-exercises"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/exercises"] }); // Refresh so we see new aliases
       setMappingUnmapped(null);
       setNewAlias("");
       toast({ title: "Alias skapat" });
@@ -237,7 +251,7 @@ export default function AdminDashboard() {
                         <TableHead>Kategori</TableHead>
                         <TableHead>Utrustning</TableHead>
                         <TableHead>Video</TableHead>
-                        <TableHead className="text-right">Redigera</TableHead>
+                        <TableHead className="text-right">Åtgärder</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -246,7 +260,16 @@ export default function AdminDashboard() {
                           <TableCell className="text-[10px] font-mono text-muted-foreground">
                             {ex.id.substring(0, 8)}
                           </TableCell>
-                          <TableCell className="font-semibold">{ex.name}</TableCell>
+                          <TableCell className="font-semibold">
+                            <div className="flex flex-col">
+                              <span>{ex.name}</span>
+                              {ex.aliases && ex.aliases.length > 0 && (
+                                <span className="text-[10px] text-muted-foreground italic">
+                                  Alias: {ex.aliases.join(", ")}
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
                           <TableCell className="text-muted-foreground">{ex.nameEn || "-"}</TableCell>
                           <TableCell>
                             <Badge variant="secondary" className="font-normal capitalize">{ex.category}</Badge>
@@ -271,9 +294,14 @@ export default function AdminDashboard() {
                             ) : "-"}
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button variant="ghost" size="icon" onClick={() => setEditingEx(ex)} className="hover:bg-primary/10 hover:text-primary transition-colors">
-                              <Edit className="w-4 h-4" />
-                            </Button>
+                            <div className="flex justify-end gap-1">
+                              <Button variant="ghost" size="icon" onClick={() => setEditingEx(ex)} className="hover:bg-primary/10 hover:text-primary transition-colors">
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button variant="ghost" size="icon" onClick={() => confirm("Ta bort övning?") && deleteMutation.mutate({ type: 'exercises', id: ex.id })} className="hover:bg-destructive/10 hover:text-destructive flex items-center h-8 w-8 transition-colors">
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -300,20 +328,34 @@ export default function AdminDashboard() {
                       <TableHead>Namn (EN)</TableHead>
                       <TableHead>Kategori</TableHead>
                       <TableHead>Key</TableHead>
-                      <TableHead className="text-right">Redigera</TableHead>
+                      <TableHead className="text-right">Åtgärder</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {equipment?.map((eq) => (
+                    {equipment?.map((eq: any) => (
                       <TableRow key={eq.id} className="admin-table-row">
-                        <TableCell className="font-semibold">{eq.name}</TableCell>
+                        <TableCell className="font-semibold">
+                          <div className="flex flex-col">
+                            <span>{eq.name}</span>
+                            {eq.aliases && eq.aliases.length > 0 && (
+                              <span className="text-[10px] text-muted-foreground italic">
+                                Alias: {eq.aliases.join(", ")}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell className="text-muted-foreground">{eq.nameEn || "-"}</TableCell>
                         <TableCell><Badge variant="outline" className="capitalize">{eq.category}</Badge></TableCell>
                         <TableCell className="text-xs font-mono">{eq.equipmentKey}</TableCell>
                         <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" onClick={() => setEditingEq(eq)} className="hover:bg-primary/10 hover:text-primary transition-colors">
-                            <Edit className="w-4 h-4" />
-                          </Button>
+                          <div className="flex justify-end gap-1">
+                            <Button variant="ghost" size="icon" onClick={() => setEditingEq(eq)} className="hover:bg-primary/10 hover:text-primary transition-colors">
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => confirm("Ta bort utrustning?") && deleteMutation.mutate({ type: 'equipment', id: eq.id })} className="hover:bg-destructive/10 hover:text-destructive flex items-center h-8 w-8 transition-colors">
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -336,16 +378,35 @@ export default function AdminDashboard() {
                   <TableHeader className="bg-muted/20">
                     <TableRow>
                       <TableHead>Namn</TableHead>
-                      <TableHead>Plats</TableHead>
-                      <TableHead>Användare ID</TableHead>
+                      <TableHead>Plats / Adress</TableHead>
+                      <TableHead>Utrustning</TableHead>
+                      <TableHead>Användare</TableHead>
+                      <TableHead className="text-right">Åtgärder</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {gyms?.map((gym) => (
+                    {gyms?.map((gym: any) => (
                       <TableRow key={gym.id} className="admin-table-row">
                         <TableCell className="font-semibold">{gym.name}</TableCell>
-                        <TableCell>{gym.location || "Ej angivet"}</TableCell>
-                        <TableCell className="text-[10px] font-mono">{gym.userId}</TableCell>
+                        <TableCell className="text-xs">{gym.location || "Ej angivet"}</TableCell>
+                        <TableCell>
+                          <Badge variant="secondary" className="font-mono text-[10px]">
+                            {gym.equipmentCount} objekt
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="text-xs font-semibold">{gym.userEmail || "Okänd"}</span>
+                            <span className="text-[9px] font-mono text-muted-foreground">{gym.userId}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            <Button variant="ghost" size="icon" onClick={() => confirm("Ta bort gym?") && deleteMutation.mutate({ type: 'gyms', id: gym.id })} className="hover:bg-destructive/10 hover:text-destructive flex items-center h-8 w-8 transition-colors">
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

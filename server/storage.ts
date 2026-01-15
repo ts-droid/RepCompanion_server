@@ -1781,6 +1781,21 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  async adminDeleteExercise(id: string): Promise<void> {
+    const { exercises } = await import("@shared/schema");
+    await db.delete(exercises).where(eq(exercises.id, id));
+  }
+
+  async adminDeleteEquipmentCatalog(id: string): Promise<void> {
+    const { equipmentCatalog } = await import("@shared/schema");
+    await db.delete(equipmentCatalog).where(eq(equipmentCatalog.id, id));
+  }
+
+  async adminDeleteGym(id: string): Promise<void> {
+    const { gyms } = await import("@shared/schema");
+    await db.delete(gyms).where(eq(gyms.id, id));
+  }
+
   async adminGetUsersCount(): Promise<number> {
     const { users } = await import("@shared/schema");
     const result = await db.select({ count: sql<number>`count(*)` }).from(users);

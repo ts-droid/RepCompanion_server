@@ -2459,8 +2459,15 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
 
   app.get("/api/admin/exercises", requireAdminAuth, async (req: any, res) => {
     try {
-      const data = await storage.adminGetAllExercises();
-      res.json(data);
+      const { exercises, exerciseAliases } = await import("@shared/schema");
+      const data = await db.select().from(exercises).orderBy(exercises.name);
+      
+      const enhancedData = await Promise.all(data.map(async (ex) => {
+        const aliases = await db.select().from(exerciseAliases).where(eq(exerciseAliases.exerciseId, ex.exerciseId || ""));
+        return { ...ex, aliases: aliases.map(a => a.alias) };
+      }));
+      
+      res.json(enhancedData);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch exercises" });
     }
@@ -2486,8 +2493,15 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
 
   app.get("/api/admin/equipment", requireAdminAuth, async (req: any, res) => {
     try {
-      const data = await storage.adminGetAllEquipment();
-      res.json(data);
+      const { equipmentCatalog, equipmentAliases } = await import("@shared/schema");
+      const data = await db.select().from(equipmentCatalog).orderBy(equipmentCatalog.name);
+      
+      const enhancedData = await Promise.all(data.map(async (eq) => {
+        const aliases = await db.select().from(equipmentAliases).where(eq(equipmentAliases.equipmentKey, eq.equipmentKey || ""));
+        return { ...eq, aliases: aliases.map(a => a.alias) };
+      }));
+      
+      res.json(enhancedData);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch equipment" });
     }
@@ -2513,19 +2527,76 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
 
   app.get("/api/admin/gyms", requireAdminAuth, async (req: any, res) => {
     try {
-      const data = await storage.adminGetAllGyms();
-      res.json(data);
+      const { gyms, users, userEquipment } = await import("@shared/schema");
+      
+      const data = await db
+        .select({
+          id: gyms.id,
+          name: gyms.name,
+          location: gyms.location,
+          userId: gyms.userId,
+          userEmail: users.email,
+          createdAt: gyms.createdAt,
+        })
+        .from(gyms)
+        .leftJoin(users, eq(gyms.userId, users.id))
+        .orderBy(desc(gyms.createdAt));
+
+      // Fetch equipment counts for each gym
+      const enhancedData = await Promise.all(
+        data.map(async (gym) => {
+          const equipment = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(userEquipment)
+            .where(eq(userEquipment.gymId, gym.id));
+          
+          return {
+            ...gym,
+            equipmentCount: Number(equipment[0]?.count || 0),
+          };
+        })
+      );
+
+      res.json(enhancedData);
     } catch (error) {
+      console.error("[ADMIN API] Failed to fetch gyms:", error);
       res.status(500).json({ message: "Failed to fetch gyms" });
     }
   });
 
-  app.put("/api/admin/gyms/:id([0-9a-fA-F-]{36})", isAuthenticatedOrDev, async (req: any, res) => {
+  app.put("/api/admin/gyms/:id([0-9a-fA-F-]{36})", requireAdminAuth, async (req: any, res) => {
     try {
       const updated = await storage.adminUpdateGym(req.params.id, req.body);
       res.json(updated);
     } catch (error) {
       res.status(500).json({ message: "Failed to update gym" });
+    }
+  });
+
+  app.delete("/api/admin/exercises/:id([0-9a-fA-F-]{36})", requireAdminAuth, async (req: any, res) => {
+    try {
+      await storage.adminDeleteExercise(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete exercise" });
+    }
+  });
+
+  app.delete("/api/admin/equipment/:id([0-9a-fA-F-]{36})", requireAdminAuth, async (req: any, res) => {
+    try {
+      await storage.adminDeleteEquipmentCatalog(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete equipment" });
+    }
+  });
+
+  app.delete("/api/admin/gyms/:id([0-9a-fA-F-]{36})", requireAdminAuth, async (req: any, res) => {
+    try {
+      await storage.adminDeleteGym(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete gym" });
     }
   });
 
