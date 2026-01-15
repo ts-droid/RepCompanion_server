@@ -2502,7 +2502,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.post("/api/admin/equipment-aliases", isAuthenticatedOrDev, async (req: any, res) => {
+  app.post("/api/admin/equipment-aliases", requireAdminAuth, async (req: any, res) => {
     try {
       const alias = await storage.adminCreateEquipmentAlias(req.body);
       res.json(alias);

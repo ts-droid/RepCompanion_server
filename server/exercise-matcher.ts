@@ -205,6 +205,16 @@ export async function matchExercise(aiGeneratedName: string): Promise<MatchResul
  */
 async function createExerciseFromAI(aiGeneratedName: string): Promise<string | null> {
   try {
+    // Check if name looks like a UUID or is just a hex string (AI error)
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(aiGeneratedName);
+    const isHexId = /^[0-9a-f]{20,}$/i.test(aiGeneratedName); // Generic long hex string
+    
+    if (isUuid || isHexId) {
+      console.warn(`[AUTO-EXPAND] Rejected UUID/ID as exercise name: ${aiGeneratedName}`);
+      await logUnmappedExercise(aiGeneratedName, 'Rejected: Name is a UUID/ID string');
+      return null;
+    }
+
     // Check if exercise already exists (avoid duplicates)
     const existing = await db
       .select()
@@ -233,7 +243,7 @@ async function createExerciseFromAI(aiGeneratedName: string): Promise<string | n
     // Create new exercise with English name
     // Always populate nameEn for auto-created exercises (English-only policy)
     const [newExercise] = await db.insert(exercises).values({
-      name: aiGeneratedName, // Fallback for display
+      name: aiGeneratedName, // Use English name as primary name for new entries
       nameEn: aiGeneratedName, // CRITICAL: Always populate nameEn
       category: 'strength', // Default category
       difficulty: 'intermediate',

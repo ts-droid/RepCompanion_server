@@ -22,6 +22,7 @@ export default function AdminDashboard() {
 
   // Editing state
   const [editingEx, setEditingEx] = useState<Exercise | null>(null);
+  const [editingEq, setEditingEq] = useState<EquipmentCatalog | null>(null);
   const [mappingUnmapped, setMappingUnmapped] = useState<UnmappedExercise | null>(null);
   const [newAlias, setNewAlias] = useState("");
 
@@ -56,6 +57,18 @@ export default function AdminDashboard() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/exercises"] });
       setEditingEx(null);
       toast({ title: "Övning uppdaterad" });
+    },
+  });
+
+  const updateEquipmentMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<EquipmentCatalog> }) => {
+      const res = await apiRequest("PUT", `/api/admin/equipment/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/equipment"] });
+      setEditingEq(null);
+      toast({ title: "Utrustning uppdaterad" });
     },
   });
 
@@ -218,21 +231,44 @@ export default function AdminDashboard() {
                   <Table>
                     <TableHeader className="bg-muted/30">
                       <TableRow>
-                        <TableHead className="w-[30%]">Namn (SV)</TableHead>
-                        <TableHead className="w-[30%]">Namn (EN)</TableHead>
+                        <TableHead className="w-[80px]">ID</TableHead>
+                        <TableHead>Namn (SV)</TableHead>
+                        <TableHead>Namn (EN)</TableHead>
                         <TableHead>Kategori</TableHead>
-                        <TableHead>V4 ID</TableHead>
+                        <TableHead>Utrustning</TableHead>
+                        <TableHead>Video</TableHead>
                         <TableHead className="text-right">Redigera</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredExercises?.slice(0, 50).map((ex) => (
                         <TableRow key={ex.id} className="admin-table-row">
+                          <TableCell className="text-[10px] font-mono text-muted-foreground">
+                            {ex.id.substring(0, 8)}
+                          </TableCell>
                           <TableCell className="font-semibold">{ex.name}</TableCell>
-                          <TableCell>{ex.nameEn}</TableCell>
-                          <TableCell><Badge variant="secondary" className="font-normal">{ex.category}</Badge></TableCell>
-                          <TableCell className="text-[10px] font-mono whitespace-nowrap overflow-hidden text-ellipsis max-w-[100px] bg-muted/50 px-2 py-1 rounded">
-                            {ex.exerciseId}
+                          <TableCell className="text-muted-foreground">{ex.nameEn || "-"}</TableCell>
+                          <TableCell>
+                            <Badge variant="secondary" className="font-normal capitalize">{ex.category}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1 max-w-[200px]">
+                              {ex.requiredEquipment?.map((eq, i) => (
+                                <Badge key={i} variant="outline" className="text-[10px] px-1 py-0 h-4">{eq}</Badge>
+                              )) || "-"}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {ex.youtubeUrl ? (
+                              <a 
+                                href={ex.youtubeUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline text-xs flex items-center gap-1"
+                              >
+                                Länk
+                              </a>
+                            ) : "-"}
                           </TableCell>
                           <TableCell className="text-right">
                             <Button variant="ghost" size="icon" onClick={() => setEditingEx(ex)} className="hover:bg-primary/10 hover:text-primary transition-colors">
@@ -260,17 +296,25 @@ export default function AdminDashboard() {
                 <Table>
                   <TableHeader className="bg-muted/20">
                     <TableRow>
-                      <TableHead>Namn</TableHead>
+                      <TableHead>Namn (SV)</TableHead>
+                      <TableHead>Namn (EN)</TableHead>
                       <TableHead>Kategori</TableHead>
                       <TableHead>Key</TableHead>
+                      <TableHead className="text-right">Redigera</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {equipment?.map((eq) => (
                       <TableRow key={eq.id} className="admin-table-row">
                         <TableCell className="font-semibold">{eq.name}</TableCell>
-                        <TableCell><Badge variant="outline">{eq.category}</Badge></TableCell>
+                        <TableCell className="text-muted-foreground">{eq.nameEn || "-"}</TableCell>
+                        <TableCell><Badge variant="outline" className="capitalize">{eq.category}</Badge></TableCell>
                         <TableCell className="text-xs font-mono">{eq.equipmentKey}</TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="icon" onClick={() => setEditingEq(eq)} className="hover:bg-primary/10 hover:text-primary transition-colors">
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -356,22 +400,34 @@ export default function AdminDashboard() {
       {/* Editing Dialog */}
       {editingEx && (
         <Dialog open={!!editingEx} onOpenChange={() => setEditingEx(null)}>
-          <DialogContent>
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Redigera övning</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
+              <div className="space-y-2">
                 <label className="text-sm font-medium">Namn (SV)</label>
                 <Input defaultValue={editingEx.name} id="edit-name" />
               </div>
-              <div>
+              <div className="space-y-2">
                 <label className="text-sm font-medium">Namn (EN)</label>
                 <Input defaultValue={editingEx.nameEn || ""} id="edit-name-en" />
               </div>
-              <div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Kategori</label>
+                <Input defaultValue={editingEx.category} id="edit-category" />
+              </div>
+              <div className="space-y-2">
                 <label className="text-sm font-medium">V4 Exercise ID</label>
                 <Input defaultValue={editingEx.exerciseId || ""} id="edit-v4-id" />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <label className="text-sm font-medium">Utrustning (kommaseparerad)</label>
+                <Input defaultValue={editingEx.requiredEquipment?.join(", ") || ""} id="edit-equipment" placeholder="t.ex. barbell, bench" />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <label className="text-sm font-medium">YouTube Video URL</label>
+                <Input defaultValue={editingEx.youtubeUrl || ""} id="edit-video" placeholder="https://youtube.com/..." />
               </div>
             </div>
             <DialogFooter>
@@ -379,10 +435,65 @@ export default function AdminDashboard() {
               <Button onClick={() => {
                 const name = (document.getElementById("edit-name") as HTMLInputElement).value;
                 const nameEn = (document.getElementById("edit-name-en") as HTMLInputElement).value;
+                const category = (document.getElementById("edit-category") as HTMLInputElement).value;
                 const exerciseId = (document.getElementById("edit-v4-id") as HTMLInputElement).value;
+                const equipmentRaw = (document.getElementById("edit-equipment") as HTMLInputElement).value;
+                const youtubeUrl = (document.getElementById("edit-video") as HTMLInputElement).value;
+                
+                const requiredEquipment = equipmentRaw.split(",").map(s => s.trim()).filter(Boolean);
+                
                 updateExerciseMutation.mutate({ 
                   id: editingEx.id, 
-                  data: { name, nameEn, exerciseId } 
+                  data: { 
+                    name, 
+                    nameEn, 
+                    category, 
+                    exerciseId, 
+                    requiredEquipment,
+                    youtubeUrl: youtubeUrl || null
+                  } 
+                });
+              }}>Spara ändringar</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {editingEq && (
+        <Dialog open={!!editingEq} onOpenChange={() => setEditingEq(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Redigera utrustning</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Namn (SV)</label>
+                <Input defaultValue={editingEq.name} id="edit-eq-name" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Namn (EN)</label>
+                <Input defaultValue={editingEq.nameEn || ""} id="edit-eq-name-en" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Kategori</label>
+                <Input defaultValue={editingEq.category} id="edit-eq-category" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Equipment Key</label>
+                <Input defaultValue={editingEq.equipmentKey || ""} id="edit-eq-key" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditingEq(null)}>Avbryt</Button>
+              <Button onClick={() => {
+                const name = (document.getElementById("edit-eq-name") as HTMLInputElement).value;
+                const nameEn = (document.getElementById("edit-eq-name-en") as HTMLInputElement).value;
+                const category = (document.getElementById("edit-eq-category") as HTMLInputElement).value;
+                const equipmentKey = (document.getElementById("edit-eq-key") as HTMLInputElement).value;
+                
+                updateEquipmentMutation.mutate({ 
+                  id: editingEq.id, 
+                  data: { name, nameEn, category, equipmentKey } 
                 });
               }}>Spara ändringar</Button>
             </DialogFooter>
