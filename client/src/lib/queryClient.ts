@@ -45,8 +45,20 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(queryKey.join("/") as string, {
+    const url = queryKey.join("/") as string;
+    
+    // Build headers
+    const headers: Record<string, string> = {};
+    
+    // Add admin JWT token if this is an admin route
+    const adminToken = localStorage.getItem("adminToken");
+    if (adminToken && url.includes("/api/admin")) {
+      headers["Authorization"] = `Bearer ${adminToken}`;
+    }
+    
+    const res = await fetch(url, {
       credentials: "include",
+      headers,
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
