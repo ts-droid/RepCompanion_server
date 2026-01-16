@@ -879,12 +879,12 @@ export default function AdminDashboard() {
 
       {/* Matching Dialog */}
       <Dialog open={!!mappingUnmapped} onOpenChange={() => setMappingUnmapped(null)}>
-        <DialogContent>
+        <DialogContent className="admin-dialog-top">
           <DialogHeader>
             <DialogTitle>{isCreatingNew ? "Skapa ny övning" : "Matcha AI-övning"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="p-3 bg-muted rounded-lg">
+            <div className="sticky-proposal">
               <p className="text-sm font-medium">AI föreslog:</p>
               <p className="text-lg font-bold">{mappingUnmapped?.aiName}</p>
             </div>
@@ -1055,7 +1055,7 @@ export default function AdminDashboard() {
       </Dialog>
       {/* Create Equipment Dialog */}
       <Dialog open={isCreatingEquipment} onOpenChange={setIsCreatingEquipment}>
-        <DialogContent>
+        <DialogContent className="admin-dialog-top">
           <DialogHeader>
             <DialogTitle>Lägg till ny utrustning</DialogTitle>
           </DialogHeader>
