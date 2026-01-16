@@ -12,7 +12,7 @@ import {
 } from "./auth";
 import { sendMagicLinkEmail } from "./email-service";
 import jwt from "jsonwebtoken";
-import { insertUserProfileSchema, updateUserProfileSchema, insertGymSchema, updateGymSchema, insertEquipmentSchema, insertWorkoutSessionSchema, insertExerciseLogSchema, updateExerciseLogSchema, suggestAlternativeRequestSchema, suggestAlternativeResponseSchema, trackPromoImpressionSchema, trackAffiliateClickSchema, insertNotificationPreferencesSchema, promoIdParamSchema, promoPlacementParamSchema, generateProgramRequestSchema, exercises, exerciseLogs, workoutSessions, programTemplateExercises, type ExerciseLog } from "@shared/schema";
+import { insertUserProfileSchema, updateUserProfileSchema, insertGymSchema, updateGymSchema, insertEquipmentSchema, insertWorkoutSessionSchema, insertExerciseLogSchema, updateExerciseLogSchema, suggestAlternativeRequestSchema, suggestAlternativeResponseSchema, trackPromoImpressionSchema, trackAffiliateClickSchema, insertNotificationPreferencesSchema, promoIdParamSchema, promoPlacementParamSchema, generateProgramRequestSchema, exercises, exerciseLogs, workoutSessions, programTemplateExercises, unmappedExercises, equipmentCatalog, exerciseAliases, equipmentAliases, gyms, users, userTimeModel, adminUsers, type ExerciseLog } from "@shared/schema";
 import { z, ZodError } from "zod";
 import { generateWorkoutProgram, generateWorkoutProgramWithReasoner, generateWorkoutProgramWithVersionSwitch, generateWorkoutBlueprintV4WithOpenAI } from "./ai-service";
 import { recognizeEquipmentFromImage } from "./roboflow-service";
@@ -2420,7 +2420,6 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
       // Actually, let's add it to storage.ts properly.
       
       // For this step, I'll use a placeholder and then fix storage.ts
-      const { userTimeModel } = await import("@shared/schema");
       const [updated] = await db
         .insert(userTimeModel)
         .values({
@@ -2459,7 +2458,6 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
 
   app.get("/api/admin/exercises", requireAdminAuth, async (req: any, res) => {
     try {
-      const { exercises, exerciseAliases } = await import("@shared/schema");
       const data = await db.select().from(exercises).orderBy(exercises.name);
       
       const enhancedData = await Promise.all(data.map(async (ex) => {
@@ -2504,7 +2502,6 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
 
   app.get("/api/admin/equipment", requireAdminAuth, async (req: any, res) => {
     try {
-      const { equipmentCatalog, equipmentAliases } = await import("@shared/schema");
       const data = await db.select().from(equipmentCatalog).orderBy(equipmentCatalog.name);
       
       const enhancedData = await Promise.all(data.map(async (item) => {
@@ -2548,7 +2545,6 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
 
   app.get("/api/admin/gyms", requireAdminAuth, async (req: any, res) => {
     try {
-      const { gyms, users } = await import("@shared/schema");
       
       const data = await db
         .select({
@@ -2678,7 +2674,6 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
   // ========== DEDICATED ADMIN USER AUTHENTICATION ==========
   
   const { hashPassword, verifyPassword, validatePasswordStrength, generateTOTPSecret, verifyTOTP, generateAdminJWT, verifyAdminJWT } = await import("./adminUserAuth");
-  const { adminUsers } = await import("@shared/schema");
   
   /**
    * Step 1: Admin login with email/password
