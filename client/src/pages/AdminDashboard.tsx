@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Search, Plus, Edit, Trash2, Check, RefreshCw, AlertCircle, Database, Users, Dumbbell, MapPin } from "lucide-react";
+import { ArrowLeft, Search, Plus, Edit, Trash2, Check, RefreshCw, AlertCircle, Database, Users, Dumbbell, MapPin, GitMerge } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,8 @@ export default function AdminDashboard() {
   const [mappingUnmapped, setMappingUnmapped] = useState<UnmappedExercise | null>(null);
   const [newAlias, setNewAlias] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [showMergeDialog, setShowMergeDialog] = useState(false);
+  const [masterId, setMasterId] = useState<string>("");
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [newExData, setNewExData] = useState({
     nameEn: "",
@@ -266,6 +268,26 @@ export default function AdminDashboard() {
         description: `${variables.ids.length} objekt raderades.`
       });
     },
+  });
+
+  const mergeExercisesMutation = useMutation({
+    mutationFn: async ({ sourceId, targetId }: { sourceId: string, targetId: string }) => {
+      const res = await apiRequest("POST", "/api/admin/exercises/merge", { sourceId, targetId });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/exercises"] });
+      setShowMergeDialog(false);
+      setSelectedIds([]);
+      toast({ title: "Övningar sammanslagna" });
+    },
+    onError: (error: Error) => {
+      toast({ 
+        title: "Kunde inte slå samman övningar", 
+        description: error.message,
+        variant: "destructive"
+      });
+    }
   });
 
   function idsInSwedish(type: string) {
@@ -513,6 +535,16 @@ export default function AdminDashboard() {
                         >
                           <Trash2 className="w-4 h-4 mr-2" /> Radera markerade
                         </Button>
+                        {selectedIds.length === 2 && (
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => setShowMergeDialog(true)}
+                            className="bg-primary/5 border-primary/20 text-primary hover:bg-primary/10 ml-2"
+                          >
+                            <GitMerge className="w-4 h-4 mr-2" /> Slå samman
+                          </Button>
+                        )}
                       </>
                     )}
                   </div>
@@ -1115,6 +1147,77 @@ export default function AdminDashboard() {
               disabled={!newEqData.name || !newEqData.equipmentKey || createEquipmentMutation.isPending}
             >
               {createEquipmentMutation.isPending ? "Sparar..." : "Spara utrustning"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Merge Exercises Dialog */}
+      <Dialog open={showMergeDialog} onOpenChange={setShowMergeDialog}>
+        <DialogContent className="admin-dialog-top sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <GitMerge className="w-5 h-5 text-primary" /> Slå samman övningar
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-6 space-y-6">
+            <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 space-y-2">
+              <p className="text-sm font-medium text-primary">Master-övningen behålls och får all historik från den andra.</p>
+              <p className="text-xs text-muted-foreground">Välj vilken som ska vara master:</p>
+            </div>
+            
+            <div className="space-y-3">
+              {selectedIds.map(id => {
+                const ex = (exercises as EnhancedExercise[])?.find(e => e.id === id);
+                if (!ex) return null;
+                return (
+                  <div 
+                    key={id}
+                    onClick={() => setMasterId(id)}
+                    className={`
+                      p-4 rounded-xl border-2 cursor-pointer transition-all flex justify-between items-center group
+                      ${masterId === id 
+                        ? 'border-primary bg-primary/10 ring-2 ring-primary/20' 
+                        : 'border-muted hover:border-muted-foreground/30 bg-muted/30'}
+                    `}
+                  >
+                    <div className="flex flex-col">
+                      <span className="font-bold flex items-center gap-2">
+                        {ex.name}
+                        {ex.exerciseId && <Badge variant="outline" className="text-[9px] h-4 py-0 group-hover:bg-primary/10">{ex.exerciseId}</Badge>}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{ex.nameEn || 'Inget engelskt namn'}</span>
+                    </div>
+                    {masterId === id && <Check className="w-5 h-5 text-primary" />}
+                  </div>
+                );
+              })}
+            </div>
+
+            {masterId && (
+              <div className="text-sm p-4 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-200">
+                <p className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                  <span>
+                    Den andra övningen ({(exercises as EnhancedExercise[])?.find(e => selectedIds.includes(e.id) && e.id !== masterId)?.name}) 
+                    kommer att **raderas permanent**. All historik flyttas till {(exercises as EnhancedExercise[])?.find(e => e.id === masterId)?.name}.
+                  </span>
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowMergeDialog(false)}>Avbryt</Button>
+            <Button 
+              disabled={!masterId || mergeExercisesMutation.isPending}
+              onClick={() => {
+                const sourceId = selectedIds.find(id => id !== masterId);
+                if (sourceId && masterId) {
+                  mergeExercisesMutation.mutate({ sourceId, targetId: masterId });
+                }
+              }}
+            >
+              {mergeExercisesMutation.isPending ? "Slår samman..." : "Slå samman nu"}
             </Button>
           </DialogFooter>
         </DialogContent>

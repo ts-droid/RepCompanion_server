@@ -160,8 +160,8 @@ export interface IStorage {
 
   incrementProgramGeneration(userId: string): Promise<void>;
   
-  // Admin operations
-  setUserAdminStatus(userId: string, isAdmin: boolean): Promise<void>;
+  adminDeleteGym(id: string): Promise<void>;
+  adminMergeExercises(sourceId: string, targetId: string): Promise<void>;
   
   // V4 specific operations
   getUserTimeModel(userId: string): Promise<import("@shared/schema").UserTimeModel | undefined>;
@@ -1846,6 +1846,93 @@ export class DatabaseStorage implements IStorage {
 
   async adminDeleteGym(id: string): Promise<void> {
     await db.delete(gyms).where(eq(gyms.id, id));
+  }
+
+  async adminMergeExercises(sourceId: string, targetId: string): Promise<void> {
+    // 1. Fetch both exercises to get their names/keys
+    const [source] = await db.select().from(exercises).where(eq(exercises.id, sourceId));
+    const [target] = await db.select().from(exercises).where(eq(exercises.id, targetId));
+
+    if (!source || !target) {
+      throw new Error("Source or target exercise not found");
+    }
+
+    // We use exerciseId (slug like 'bench_press') as the primary key for logic, 
+    // falling back to the UUID id if exerciseId is missing
+    const sourceKey = source.exerciseId || source.id;
+    const targetKey = target.exerciseId || target.id;
+
+    console.log(`[ADMIN MERGE] Merging ${sourceKey} into ${targetKey}`);
+
+    // 2. Migrate Aliases
+    await db.update(exerciseAliases)
+      .set({ exerciseId: targetKey })
+      .where(eq(exerciseAliases.exerciseId, sourceKey));
+
+    // 3. Update Exercise Logs
+    await db.update(exerciseLogs)
+      .set({ exerciseKey: targetKey })
+      .where(eq(exerciseLogs.exerciseKey, sourceKey));
+
+    // 4. Update Template Exercises
+    await db.update(programTemplateExercises)
+      .set({ exerciseKey: targetKey })
+      .where(eq(programTemplateExercises.exerciseKey, sourceKey));
+
+    // 5. Merge Exercise Stats
+    const sourceStatsList = await db.select().from(exerciseStats).where(eq(exerciseStats.exerciseKey, sourceKey));
+    for (const stat of sourceStatsList) {
+      // Check if target already has stats for this user
+      const [existingTargetStat] = await db.select().from(exerciseStats)
+        .where(and(eq(exerciseStats.userId, stat.userId), eq(exerciseStats.exerciseKey, targetKey)));
+
+      if (existingTargetStat) {
+        // Merge stats
+        const totalSessions = (existingTargetStat.totalSessions || 0) + (stat.totalSessions || 0);
+        const avgWeight = totalSessions > 0 
+          ? Math.round(((existingTargetStat.avgWeight || 0) * (existingTargetStat.totalSessions || 0) + (stat.avgWeight || 0) * (stat.totalSessions || 0)) / totalSessions)
+          : existingTargetStat.avgWeight;
+
+        await db.update(exerciseStats)
+          .set({
+            avgWeight,
+            maxWeight: Math.max(existingTargetStat.maxWeight || 0, stat.maxWeight || 0),
+            totalVolume: (existingTargetStat.totalVolume || 0) + (stat.totalVolume || 0),
+            totalSets: (existingTargetStat.totalSets || 0) + (stat.totalSets || 0),
+            totalSessions,
+            updatedAt: new Date()
+          })
+          .where(eq(exerciseStats.id, existingTargetStat.id));
+        
+        // Delete source stat
+        await db.delete(exerciseStats).where(eq(exerciseStats.id, stat.id));
+      } else {
+        // Just point to target
+        await db.update(exerciseStats)
+          .set({ exerciseKey: targetKey })
+          .where(eq(exerciseStats.id, stat.id));
+      }
+    }
+
+    // 6. Enrichment: Update target if it lacks metadata that source has
+    const updates: any = {};
+    if (!target.nameEn && source.nameEn) updates.nameEn = source.nameEn;
+    if (!target.description && source.description) updates.description = source.description;
+    if (!target.youtubeUrl && source.youtubeUrl) {
+      updates.youtubeUrl = source.youtubeUrl;
+      updates.videoType = source.videoType;
+    }
+    // Muscles
+    if ((!target.primaryMuscles || target.primaryMuscles.length === 0 || target.primaryMuscles[0] === 'unknown') && source.primaryMuscles && source.primaryMuscles[0] !== 'unknown') {
+      updates.primaryMuscles = source.primaryMuscles;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await db.update(exercises).set(updates).where(eq(exercises.id, targetId));
+    }
+
+    // 7. Delete source exercise
+    await db.delete(exercises).where(eq(exercises.id, sourceId));
   }
 
   async adminDeleteExercisesBatch(ids: string[]): Promise<void> {

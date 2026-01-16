@@ -2509,6 +2509,20 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
+  app.post("/api/admin/exercises/merge", requireAdminAuth, async (req: any, res) => {
+    try {
+      const { sourceId, targetId } = req.body;
+      if (!sourceId || !targetId) {
+        return res.status(400).json({ message: "sourceId and targetId are required" });
+      }
+      await storage.adminMergeExercises(sourceId, targetId);
+      res.json({ message: "Exercises merged successfully" });
+    } catch (error: any) {
+      console.error("[ADMIN API] Failed to merge exercises:", error);
+      res.status(500).json({ message: error.message || "Failed to merge exercises" });
+    }
+  });
+
   app.post("/api/admin/exercise-aliases", requireAdminAuth, async (req: any, res) => {
     try {
       const alias = await storage.adminCreateExerciseAlias(req.body);
