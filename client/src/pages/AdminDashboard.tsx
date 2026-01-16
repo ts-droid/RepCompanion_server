@@ -90,7 +90,7 @@ export default function AdminDashboard() {
   // Handle 401 errors
   const anyError: any = statsError || unmappedError || exercisesError || equipmentError || gymsError;
   if (anyError && anyError.status === 401) {
-    setLocation("/admin-login");
+    setLocation("/admin/login");
   }
 
   // Mutations
