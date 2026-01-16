@@ -88,8 +88,8 @@ export default function AdminDashboard() {
   });
 
   // Handle 401 errors
-  const anyError = statsError || unmappedError || exercisesError || equipmentError || gymsError;
-  if (anyError && (anyError as any).status === 401) {
+  const anyError: any = statsError || unmappedError || exercisesError || equipmentError || gymsError;
+  if (anyError && anyError.status === 401) {
     setLocation("/admin-login");
   }
 
@@ -416,7 +416,7 @@ export default function AdminDashboard() {
                         </TableCell>
                       </TableRow>
                     ))}
-                    {!unmapped && (
+                     {!unmapped && !isUnmappedError && (
                       <TableRow>
                         <TableCell colSpan={5} className="text-center py-20">
                           <RefreshCw className="w-8 h-8 text-primary animate-spin mx-auto mb-2" />
@@ -573,11 +573,20 @@ export default function AdminDashboard() {
                           </TableCell>
                         </TableRow>
                       ))}
-                    {!filteredExercises && (
+                    {!filteredExercises && !isExercisesError && (
                       <TableRow>
                         <TableCell colSpan={8} className="text-center py-20">
                           <RefreshCw className="w-8 h-8 text-primary animate-spin mx-auto mb-2" />
                           <p className="text-muted-foreground">Hämtar övningar...</p>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {isExercisesError && (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-12 text-destructive">
+                          <AlertCircle className="w-8 h-8 mx-auto mb-2" />
+                          <p className="font-semibold">Kunde inte hämta övningar</p>
+                          <p className="text-xs opacity-70">{(exercisesError as any)?.message || "Okänt fel"}</p>
                         </TableCell>
                       </TableRow>
                     )}
@@ -684,11 +693,20 @@ export default function AdminDashboard() {
                         </TableCell>
                       </TableRow>
                     ))}
-                    {!equipment && (
+                    {!equipment && !isEquipmentError && (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center py-20">
                           <RefreshCw className="w-8 h-8 text-primary animate-spin mx-auto mb-2" />
                           <p className="text-muted-foreground">Hämtar utrustning...</p>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {isEquipmentError && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-12 text-destructive">
+                          <AlertCircle className="w-8 h-8 mx-auto mb-2" />
+                          <p className="font-semibold">Kunde inte hämta utrustning</p>
+                          <p className="text-xs opacity-70">{(equipmentError as any)?.message || "Okänt fel"}</p>
                         </TableCell>
                       </TableRow>
                     )}
@@ -789,11 +807,20 @@ export default function AdminDashboard() {
                         </TableCell>
                       </TableRow>
                     ))}
-                    {!gyms && (
+                    {!gyms && !isGymsError && (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center py-20">
                           <RefreshCw className="w-8 h-8 text-primary animate-spin mx-auto mb-2" />
                           <p className="text-muted-foreground">Hämtar gym...</p>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {isGymsError && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-12 text-destructive">
+                          <AlertCircle className="w-8 h-8 mx-auto mb-2" />
+                          <p className="font-semibold">Kunde inte hämta gym</p>
+                          <p className="text-xs opacity-70">{(gymsError as any)?.message || "Okänt fel"}</p>
                         </TableCell>
                       </TableRow>
                     )}
