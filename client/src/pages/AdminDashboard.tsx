@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { Exercise, EquipmentCatalog, Gym, UnmappedExercise } from "@shared/schema";
@@ -1053,34 +1054,146 @@ export default function AdminDashboard() {
 
       {/* Edit Exercise Dialog */}
       <Dialog open={!!editingEx} onOpenChange={() => setEditingEx(null)}>
-        <DialogContent>
+        <DialogContent className="admin-dialog-top md:max-w-[700px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Redigera övning</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Namn (SV)</label>
-              <Input value={editingEx?.name || ""} disabled />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Namn (SV)</label>
+                <Input value={editingEx?.name || ""} disabled className="bg-muted" />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">V4 Exercise ID</label>
+                <Input 
+                  value={editingEx?.exerciseId || ""} 
+                  onChange={(e) => setEditingEx(prev => prev ? { ...prev, exerciseId: e.target.value } : null)}
+                  placeholder="t.ex. barbell_bench_press"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Namn (EN)</label>
+                <Input 
+                  value={editingEx?.nameEn || ""} 
+                  onChange={(e) => setEditingEx(prev => prev ? { ...prev, nameEn: e.target.value } : null)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Kategori</label>
+                <select 
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  value={editingEx?.category || ""}
+                  onChange={(e) => setEditingEx(prev => prev ? { ...prev, category: e.target.value } : null)}
+                >
+                  <option value="strength">Strength</option>
+                  <option value="isolation">Isolation</option>
+                  <option value="compound">Compound</option>
+                  <option value="cardio">Cardio</option>
+                  <option value="stretching">Stretching</option>
+                  <option value="mobility">Mobility</option>
+                  <option value="recovery">Recovery</option>
+                  <option value="muscle_balance">Muscle Balance</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Svårighetsgrad</label>
+                <select 
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  value={editingEx?.difficulty || "beginner"}
+                  onChange={(e) => setEditingEx(prev => prev ? { ...prev, difficulty: e.target.value } : null)}
+                >
+                  <option value="beginner">Beginner</option>
+                  <option value="intermediate">Intermediate</option>
+                  <option value="advanced">Advanced</option>
+                </select>
+              </div>
+              
+              <div className="flex items-center space-x-2 pt-2">
+                <Checkbox 
+                  id="isCompound" 
+                  checked={editingEx?.isCompound || false} 
+                  onCheckedChange={(checked) => setEditingEx(prev => prev ? { ...prev, isCompound: !!checked } : null)}
+                />
+                <label htmlFor="isCompound" className="text-sm font-medium leading-none cursor-pointer">
+                  Flerledsövning (Compound)
+                </label>
+              </div>
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">V4 Exercise ID</label>
-              <Input 
-                value={editingEx?.exerciseId || ""} 
-                onChange={(e) => setEditingEx(prev => prev ? { ...prev, exerciseId: e.target.value } : null)}
-                placeholder="Unikt ID för systemet"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Namn (EN)</label>
-              <Input 
-                value={editingEx?.nameEn || ""} 
-                onChange={(e) => setEditingEx(prev => prev ? { ...prev, nameEn: e.target.value } : null)}
-              />
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">YouTube URL</label>
+                <Input 
+                  value={editingEx?.youtubeUrl || ""} 
+                  onChange={(e) => setEditingEx(prev => prev ? { ...prev, youtubeUrl: e.target.value } : null)}
+                  placeholder="https://www.youtube.com/watch?v=..."
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Utrustning (separera med kommatecken)</label>
+                <Input 
+                  value={editingEx?.requiredEquipment?.join(", ") || ""} 
+                  onChange={(e) => setEditingEx(prev => prev ? { ...prev, requiredEquipment: e.target.value.split(",").map(s => s.trim()).filter(Boolean) } : null)}
+                  placeholder="barbell, bench"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Primära Muskler (kommatecken)</label>
+                <Input 
+                  value={editingEx?.primaryMuscles?.join(", ") || ""} 
+                  onChange={(e) => setEditingEx(prev => prev ? { ...prev, primaryMuscles: e.target.value.split(",").map(s => s.trim()).filter(Boolean) } : null)}
+                  placeholder="chest, triceps"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Sekundära Muskler (kommatecken)</label>
+                <Input 
+                  value={editingEx?.secondaryMuscles?.join(", ") || ""} 
+                  onChange={(e) => setEditingEx(prev => prev ? { ...prev, secondaryMuscles: e.target.value.split(",").map(s => s.trim()).filter(Boolean) } : null)}
+                  placeholder="shoulders"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Beskrivning</label>
+                <Textarea 
+                  value={editingEx?.description || ""} 
+                  onChange={(e) => setEditingEx(prev => prev ? { ...prev, description: e.target.value } : null)}
+                  rows={3}
+                />
+              </div>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingEx(null)}>Avbryt</Button>
-            <Button onClick={() => editingEx && updateExerciseMutation.mutate({ id: editingEx.id, data: { nameEn: editingEx.nameEn, exerciseId: editingEx.exerciseId } })}>Spara</Button>
+            <Button onClick={() => {
+              if (editingEx) {
+                const { id, ...data } = editingEx;
+                // Clean data: remove aliases and other non-updateable fields if necessary
+                const updateData = {
+                  exerciseId: data.exerciseId,
+                  nameEn: data.nameEn,
+                  category: data.category,
+                  difficulty: data.difficulty,
+                  primaryMuscles: data.primaryMuscles,
+                  secondaryMuscles: data.secondaryMuscles,
+                  requiredEquipment: data.requiredEquipment,
+                  isCompound: data.isCompound,
+                  youtubeUrl: data.youtubeUrl,
+                  description: data.description,
+                  videoType: data.youtubeUrl ? 'youtube' : null
+                };
+                updateExerciseMutation.mutate({ id, data: updateData });
+              }
+            }}>Spara</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
