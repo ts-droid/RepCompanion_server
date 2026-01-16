@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { exercises, unmappedExercises } from "@shared/schema";
-import { eq, sql } from "drizzle-orm";
+import { exercises, unmappedExercises, exerciseAliases as exerciseAliasesTable } from "@shared/schema";
+import { eq, sql, or } from "drizzle-orm";
 
 /**
  * Exercise Matching System
@@ -14,7 +14,8 @@ import { eq, sql } from "drizzle-orm";
  */
 
 // Normalize exercise name for matching
-function normalizeName(name: string): string {
+export function normalizeName(name: string): string {
+  if (!name) return "";
   return name
     .toLowerCase()
     .replace(/[^\w\s]/g, '') // Remove punctuation
@@ -127,6 +128,33 @@ export async function matchExercise(aiGeneratedName: string): Promise<MatchResul
       exerciseName: exactMatch[0].nameEn!, // Always exists due to WHERE clause
       confidence: 'exact',
     };
+  }
+  
+  // Step 1.5: Try database alias matching
+  const dbAliases = await db
+    .select()
+    .from(exerciseAliasesTable)
+    .where(eq(exerciseAliasesTable.aliasNorm, normalized))
+    .limit(1);
+
+  if (dbAliases.length > 0) {
+    const dbAlias = dbAliases[0];
+    const matchedEx = await db
+      .select()
+      .from(exercises)
+      .where(or(
+        eq(exercises.exerciseId, dbAlias.exerciseId),
+        eq(exercises.id, dbAlias.exerciseId)
+      ))
+      .limit(1);
+
+    if (matchedEx.length > 0) {
+      return {
+        matched: true,
+        exerciseName: matchedEx[0].nameEn || matchedEx[0].name,
+        confidence: 'alias',
+      };
+    }
   }
 
   // Step 2: Try alias matching (ENGLISH ONLY - nameEn must exist)

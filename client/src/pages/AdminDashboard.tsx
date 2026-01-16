@@ -233,7 +233,6 @@ export default function AdminDashboard() {
     mutationFn: async (data: { exerciseId: string; alias: string; lang: string }) => {
       const res = await apiRequest("POST", "/api/admin/exercise-aliases", {
         ...data,
-        aliasNorm: data.alias.toLowerCase().trim(),
         source: 'admin'
       });
       return res.json();

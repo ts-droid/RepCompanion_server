@@ -61,7 +61,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, gte, sql, inArray, isNull, isNotNull } from "drizzle-orm";
-import { matchExercise } from "./exercise-matcher";
+import { matchExercise, normalizeName } from "./exercise-matcher";
 
 export interface IStorage {
   // User operations (required by Replit Auth)
@@ -1751,7 +1751,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   async adminCreateExerciseAlias(data: import("@shared/schema").InsertExerciseAlias): Promise<import("@shared/schema").ExerciseAlias> {
-    const [alias] = await db.insert(exerciseAliases).values(data).returning();
+    const norm = normalizeName(data.alias);
+    const [alias] = await db.insert(exerciseAliases)
+      .values({
+        ...data,
+        aliasNorm: norm
+      })
+      .onConflictDoUpdate({
+        target: exerciseAliases.aliasNorm,
+        set: {
+          exerciseId: data.exerciseId,
+          alias: data.alias,
+          lang: data.lang || 'sv',
+          source: data.source || 'admin'
+        }
+      })
+      .returning();
     return alias;
   }
 
