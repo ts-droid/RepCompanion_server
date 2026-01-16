@@ -394,9 +394,17 @@ export default function AdminDashboard() {
                         </TableCell>
                       </TableRow>
                     ))}
-                    {(!unmapped || unmapped.length === 0) && (
+                    {!unmapped && (
                       <TableRow>
-                        <TableCell colSpan={4} className="text-center py-12">
+                        <TableCell colSpan={5} className="text-center py-20">
+                          <RefreshCw className="w-8 h-8 text-primary animate-spin mx-auto mb-2" />
+                          <p className="text-muted-foreground">Hämtar omatchade övningar...</p>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {unmapped && unmapped.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center py-12">
                           <div className="flex flex-col items-center gap-2 text-muted-foreground">
                             <Check className="w-8 h-8 text-primary" />
                             <p>Inga omatchade övningar just nu!</p>
@@ -534,6 +542,24 @@ export default function AdminDashboard() {
                           </TableCell>
                         </TableRow>
                       ))}
+                    {!filteredExercises && (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-20">
+                          <RefreshCw className="w-8 h-8 text-primary animate-spin mx-auto mb-2" />
+                          <p className="text-muted-foreground">Hämtar övningar...</p>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {filteredExercises && filteredExercises.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-12">
+                          <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                            <AlertCircle className="w-8 h-8 text-muted-foreground" />
+                            <p>Inga övningar hittades.</p>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
                     </TableBody>
                   </Table>
                 </CardContent>
@@ -627,6 +653,24 @@ export default function AdminDashboard() {
                         </TableCell>
                       </TableRow>
                     ))}
+                    {!equipment && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-20">
+                          <RefreshCw className="w-8 h-8 text-primary animate-spin mx-auto mb-2" />
+                          <p className="text-muted-foreground">Hämtar utrustning...</p>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {equipment && equipment.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-12">
+                          <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                            <AlertCircle className="w-8 h-8 text-muted-foreground" />
+                            <p>Ingen utrustning hittades.</p>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </CardContent>
@@ -698,27 +742,40 @@ export default function AdminDashboard() {
                         <TableCell className="text-xs">{gym.location || "Ej angivet"}</TableCell>
                         <TableCell>
                           <Badge variant="secondary" className="font-mono text-[10px]">
-                            {gym.equipmentCount} objekt
+                            {gym.equipmentCount || 0} st
                           </Badge>
                         </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col">
-                            <span className="text-xs font-semibold">{gym.userEmail || "Okänd"}</span>
-                            <span className="text-[9px] font-mono text-muted-foreground">{gym.userId}</span>
-                          </div>
-                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{gym.userEmail || "Ingen ägare"}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
                             <Button variant="ghost" size="icon" onClick={() => setEditingGym(gym)} className="hover:bg-primary/10 hover:text-primary transition-colors">
                               <Edit className="w-4 h-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={() => confirm("Ta bort gym?") && deleteMutation.mutate({ type: 'gyms', id: gym.id })} className="hover:bg-destructive/10 hover:text-destructive flex items-center h-8 w-8 transition-colors">
+                            <Button variant="ghost" size="icon" onClick={() => confirm("Ta bort gym?") && deleteMutation.mutate({ type: 'gyms', id: gym.id })} className="hover:bg-destructive/10 hover:text-destructive h-8 w-8 flex items-center transition-colors">
                               <Trash2 className="w-4 h-4" />
                             </Button>
                           </div>
                         </TableCell>
                       </TableRow>
                     ))}
+                    {!gyms && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-20">
+                          <RefreshCw className="w-8 h-8 text-primary animate-spin mx-auto mb-2" />
+                          <p className="text-muted-foreground">Hämtar gym...</p>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {gyms && gyms.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-12">
+                          <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                            <AlertCircle className="w-8 h-8 text-muted-foreground" />
+                            <p>Inga gym hittades.</p>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </CardContent>
@@ -832,227 +889,79 @@ export default function AdminDashboard() {
                 onClick={async () => {
                   if (mappingUnmapped && newAlias) {
                     const selectedEx = exercises?.find(e => e.id === newAlias);
-                    let finalId = selectedEx?.exerciseId;
                     
-                    // If no V4 ID exists, update the exercise first
-                    if (!finalId && newExData.exerciseId) {
-                      try {
-                        await updateExerciseMutation.mutateAsync({
-                          id: selectedEx!.id,
-                          data: { exerciseId: newExData.exerciseId }
-                        });
-                        finalId = newExData.exerciseId;
-                      } catch (e) {
-                        return; // Toast handled by mutation
-                      }
-                    }
-
-                    if (finalId) {
-                      createAliasMutation.mutate({ 
-                        exerciseId: finalId, 
-                        alias: mappingUnmapped.aiName,
-                        lang: 'sv' 
+                    // If the exercise is missing an ID, update it first
+                    if (selectedEx && !selectedEx.exerciseId && newExData.exerciseId) {
+                      await updateExerciseMutation.mutateAsync({
+                        id: selectedEx.id,
+                        data: { exerciseId: newExData.exerciseId }
                       });
                     }
+
+                    createAliasMutation.mutate({
+                      exerciseId: selectedEx?.exerciseId || newExData.exerciseId || newAlias,
+                      alias: mappingUnmapped.aiName,
+                      lang: 'sv'
+                    });
                   }
                 }}
               >
-                {createAliasMutation.isPending || updateExerciseMutation.isPending ? "Sparar..." : "Skapa Alias & Koppla"}
+                {createAliasMutation.isPending || updateExerciseMutation.isPending ? "Sparar..." : "Spara koppling"}
               </Button>
             ) : (
               <Button 
-                disabled={!newExData.nameEn || !newExData.exerciseId || createExerciseMutation.isPending}
-                onClick={() => createExerciseMutation.mutate({
-                  name: mappingUnmapped?.aiName, // Primary name is Swedish from AI usually
-                  nameEn: newExData.nameEn,
-                  category: newExData.category,
-                  exerciseId: newExData.exerciseId,
-                  difficulty: 'intermediate',
-                  primaryMuscles: ['unknown'],
-                  requiredEquipment: ['unknown'],
-                })}
+                disabled={!newExData.exerciseId || createExerciseMutation.isPending}
+                onClick={() => {
+                  createExerciseMutation.mutate({
+                    name: mappingUnmapped?.aiName || "",
+                    nameEn: newExData.nameEn,
+                    category: newExData.category,
+                    exerciseId: newExData.exerciseId
+                  });
+                }}
               >
-                {createExerciseMutation.isPending ? "Skapar..." : "Skapa & Koppla"}
+                {createExerciseMutation.isPending ? "Sparar..." : "Skapa & Koppla"}
               </Button>
             )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Editing Dialog */}
-      {editingEx && (
-        <Dialog open={!!editingEx} onOpenChange={() => setEditingEx(null)}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Redigera övning</DialogTitle>
-            </DialogHeader>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Namn (SV)</label>
-                <Input defaultValue={editingEx.name} id="edit-name" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Namn (EN)</label>
-                <Input defaultValue={editingEx.nameEn || ""} id="edit-name-en" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Kategori</label>
-                <Input defaultValue={editingEx.category} id="edit-category" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">V4 Exercise ID</label>
-                <Input defaultValue={editingEx.exerciseId || ""} id="edit-v4-id" />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <label className="text-sm font-medium">Utrustning (kommaseparerad)</label>
-                <Input defaultValue={editingEx.requiredEquipment?.join(", ") || ""} id="edit-equipment" placeholder="t.ex. barbell, bench" />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <label className="text-sm font-medium">YouTube Video URL</label>
-                <Input defaultValue={editingEx.youtubeUrl || ""} id="edit-video" placeholder="https://youtube.com/..." />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setEditingEx(null)}>Avbryt</Button>
-              <Button onClick={() => {
-                const name = (document.getElementById("edit-name") as HTMLInputElement).value;
-                const nameEn = (document.getElementById("edit-name-en") as HTMLInputElement).value;
-                const category = (document.getElementById("edit-category") as HTMLInputElement).value;
-                const exerciseId = (document.getElementById("edit-v4-id") as HTMLInputElement).value;
-                const equipmentRaw = (document.getElementById("edit-equipment") as HTMLInputElement).value;
-                const youtubeUrl = (document.getElementById("edit-video") as HTMLInputElement).value;
-                
-                const requiredEquipment = equipmentRaw.split(",").map(s => s.trim()).filter(Boolean);
-                
-                updateExerciseMutation.mutate({ 
-                  id: editingEx.id, 
-                  data: { 
-                    name, 
-                    nameEn, 
-                    category, 
-                    exerciseId: exerciseId || null, 
-                    requiredEquipment,
-                    youtubeUrl: youtubeUrl || null
-                  } 
-                });
-              }}>Spara ändringar</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {editingEq && (
-        <Dialog open={!!editingEq} onOpenChange={() => setEditingEq(null)}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Redigera utrustning</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Namn (SV)</label>
-                <Input defaultValue={editingEq.name} id="edit-eq-name" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Namn (EN)</label>
-                <Input defaultValue={editingEq.nameEn || ""} id="edit-eq-name-en" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Kategori</label>
-                <Input defaultValue={editingEq.category} id="edit-eq-category" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Equipment Key</label>
-                <Input defaultValue={editingEq.equipmentKey || ""} id="edit-eq-key" />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setEditingEq(null)}>Avbryt</Button>
-              <Button onClick={() => {
-                const name = (document.getElementById("edit-eq-name") as HTMLInputElement).value;
-                const nameEn = (document.getElementById("edit-eq-name-en") as HTMLInputElement).value;
-                const category = (document.getElementById("edit-eq-category") as HTMLInputElement).value;
-                const equipmentKey = (document.getElementById("edit-eq-key") as HTMLInputElement).value;
-                
-                updateEquipmentMutation.mutate({ 
-                  id: editingEq.id, 
-                  data: { name, nameEn, category, equipmentKey } 
-                });
-              }}>Spara ändringar</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* Edit Gym Dialog */}
-      <Dialog open={!!editingGym} onOpenChange={() => setEditingGym(null)}>
-        <DialogContent className="max-w-md">
+      {/* Edit Exercise Dialog */}
+      <Dialog open={!!editingEx} onOpenChange={() => setEditingEx(null)}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Redigera Gym</DialogTitle>
+            <DialogTitle>Redigera övning</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Namn</label>
+              <label className="text-sm font-medium">Namn (SV)</label>
+              <Input value={editingEx?.name || ""} disabled />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">V4 Exercise ID</label>
               <Input 
-                value={editingGym?.name || ""} 
-                onChange={(e) => setEditingGym(prev => prev ? { ...prev, name: e.target.value } : null)}
+                value={editingEx?.exerciseId || ""} 
+                onChange={(e) => setEditingEx(prev => prev ? { ...prev, exerciseId: e.target.value } : null)}
+                placeholder="Unikt ID för systemet"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Plats / Adress</label>
+              <label className="text-sm font-medium">Namn (EN)</label>
               <Input 
-                value={editingGym?.location || ""} 
-                onChange={(e) => setEditingGym(prev => prev ? { ...prev, location: e.target.value } : null)}
+                value={editingEx?.nameEn || ""} 
+                onChange={(e) => setEditingEx(prev => prev ? { ...prev, nameEn: e.target.value } : null)}
               />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Latitud</label>
-                <Input 
-                  value={editingGym?.latitude || ""} 
-                  onChange={(e) => setEditingGym(prev => prev ? { ...prev, latitude: e.target.value } : null)}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Longitud</label>
-                <Input 
-                  value={editingGym?.longitude || ""} 
-                  onChange={(e) => setEditingGym(prev => prev ? { ...prev, longitude: e.target.value } : null)}
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Utrustningsnycklar (kommaseparerade)</label>
-              <textarea 
-                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                value={editingGym?.equipmentKeys?.join(", ") || ""} 
-                onChange={(e) => setEditingGym(prev => prev ? { ...prev, equipmentKeys: e.target.value.split(",").map(k => k.trim()).filter(Boolean) } : null)}
-                placeholder="t.ex. barbell, dumbbells, rack"
-              />
-              <p className="text-[10px] text-muted-foreground italic">
-                Spara tom för att rensa all utrustning.
-              </p>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingGym(null)}>Avbryt</Button>
-            <Button 
-              onClick={() => {
-                if (editingGym) {
-                  const { equipmentKeys, id, ...rest } = editingGym;
-                  updateGymMutation.mutate({ 
-                    id, 
-                    data: rest, 
-                    equipmentKeys 
-                  });
-                }
-              }}
-              disabled={updateGymMutation.isPending}
-            >
-              Spara ändringar
-            </Button>
+            <Button variant="outline" onClick={() => setEditingEx(null)}>Avbryt</Button>
+            <Button onClick={() => editingEx && updateExerciseMutation.mutate({ id: editingEx.id, data: { nameEn: editingEx.nameEn, exerciseId: editingEx.exerciseId } })}>Spara</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
   );
 }
+
+          
