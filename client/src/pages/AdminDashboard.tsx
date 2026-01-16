@@ -58,25 +58,40 @@ export default function AdminDashboard() {
   };
 
   // Queries
-  const { data: stats } = useQuery<{ usersCount: number }>({
+  const { data: versionData } = useQuery<{ version: string }>({
+    queryKey: ["/api/version"],
+  });
+
+  const { data: stats, isError: isStatsError, error: statsError } = useQuery<{ usersCount: number }>({
     queryKey: ["/api/admin/stats"],
+    retry: false,
   });
 
-  const { data: unmapped } = useQuery<UnmappedExercise[]>({
+  const { data: unmapped, isError: isUnmappedError, error: unmappedError } = useQuery<UnmappedExercise[]>({
     queryKey: ["/api/admin/unmapped-exercises"],
+    retry: false,
   });
 
-  const { data: exercises } = useQuery<EnhancedExercise[]>({
+  const { data: exercises, isError: isExercisesError, error: exercisesError } = useQuery<EnhancedExercise[]>({
     queryKey: ["/api/admin/exercises"],
+    retry: false,
   });
 
-  const { data: equipment } = useQuery<EnhancedEquipment[]>({
+  const { data: equipment, isError: isEquipmentError, error: equipmentError } = useQuery<EnhancedEquipment[]>({
     queryKey: ["/api/admin/equipment"],
+    retry: false,
   });
 
-  const { data: gyms } = useQuery<Gym[]>({
+  const { data: gyms, isError: isGymsError, error: gymsError } = useQuery<Gym[]>({
     queryKey: ["/api/admin/gyms"],
+    retry: false,
   });
+
+  // Handle 401 errors
+  const anyError = statsError || unmappedError || exercisesError || equipmentError || gymsError;
+  if (anyError && (anyError as any).status === 401) {
+    setLocation("/admin-login");
+  }
 
   // Mutations
   const updateExerciseMutation = useMutation({
@@ -246,7 +261,14 @@ export default function AdminDashboard() {
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold admin-header">Admin Dashboard</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-3xl font-bold admin-header">Admin Dashboard</h1>
+              {versionData?.version && (
+                <Badge variant="outline" className="text-[10px] py-0 h-5 font-mono opacity-70">
+                  v{versionData.version}
+                </Badge>
+              )}
+            </div>
             <p className="text-muted-foreground">Hantera RepCompanion databas och system</p>
           </div>
         </div>
@@ -399,6 +421,15 @@ export default function AdminDashboard() {
                         <TableCell colSpan={5} className="text-center py-20">
                           <RefreshCw className="w-8 h-8 text-primary animate-spin mx-auto mb-2" />
                           <p className="text-muted-foreground">Hämtar omatchade övningar...</p>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {isUnmappedError && (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center py-12 text-destructive">
+                          <AlertCircle className="w-8 h-8 mx-auto mb-2" />
+                          <p className="font-semibold">Kunde inte hämta data</p>
+                          <p className="text-xs opacity-70">{(unmappedError as any)?.message || "Okänt fel"}</p>
                         </TableCell>
                       </TableRow>
                     )}

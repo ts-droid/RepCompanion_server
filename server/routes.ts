@@ -33,27 +33,45 @@ const authRequestSchema = z.object({
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // ========== PUBLIC ROUTES ==========
-  
-  app.get("/api/ping", (_req, res) => {
-    res.json({ 
-      status: "ok", 
-      message: "RepCompanion API is running",
-      time: new Date().toISOString()
-    });
-  });
-
-  // Read version from package.json
+  // Read version from package.json for health check
   const fs = await import("fs");
   const path = await import("path");
   const packageJsonPath = path.resolve(process.cwd(), "package.json");
   const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
+  const APP_VERSION = packageJson.version;
+
+  // ========== PUBLIC ROUTES ==========
+
+  app.get("/api/health", async (_req, res) => {
+    try {
+      // Basic DB check
+      const dbResult = await db.execute(sql`SELECT 1 as connected`);
+      const isConnected = Array.isArray(dbResult.rows) && dbResult.rows.length > 0;
+      
+      res.json({
+        status: isConnected ? "ok" : "degraded",
+        version: APP_VERSION,
+        time: new Date().toISOString(),
+        database: isConnected ? "connected" : "disconnected",
+        env: process.env.NODE_ENV || "development",
+        railway: !!process.env.RAILWAY_ENVIRONMENT
+      });
+    } catch (error: any) {
+      res.status(503).json({
+        status: "error",
+        version: APP_VERSION,
+        error: error.message,
+        database: "unreachable"
+      });
+    }
+  });
 
   app.get("/api/version", (_req, res) => {
-    res.json({ 
-      version: packageJson.version,
-      deployId: process.env.RAILWAY_GIT_COMMIT_SHA || "dev",
-      time: new Date().toISOString()
-    });
+    res.json({ version: APP_VERSION });
+  });
+
+  app.get("/api/ping", (_req, res) => {
+    res.send("pong");
   });
 
   // ========== AUTH ROUTES ==========
@@ -3068,15 +3086,17 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.get("/api/admin/debug-db", requireAdminAuth, async (_req, res) => {
+  app.get("/api/admin/debug-db", requireAdminAuth, async (_req: any, res) => {
     try {
+      console.log(`[DEBUG-DB] Running diagnostics by admin: ${_req.adminUser?.email}`);
+      
       const counts = {
-        users: await db.select({ count: sql<number>`count(*)` }).from(users),
-        exercises: await db.select({ count: sql<number>`count(*)` }).from(exercises),
-        unmapped: await db.select({ count: sql<number>`count(*)` }).from(unmappedExercises),
-        equipment: await db.select({ count: sql<number>`count(*)` }).from(equipmentCatalog),
-        gyms: await db.select({ count: sql<number>`count(*)` }).from(gyms),
-        adminUsers: await db.select({ count: sql<number>`count(*)` }).from(adminUsers),
+        users: await db.select({ count: sql<number>`count(*)` }).from(users).catch(e => ({ error: e.message })),
+        exercises: await db.select({ count: sql<number>`count(*)` }).from(exercises).catch(e => ({ error: e.message })),
+        unmapped: await db.select({ count: sql<number>`count(*)` }).from(unmappedExercises).catch(e => ({ error: e.message })),
+        equipment: await db.select({ count: sql<number>`count(*)` }).from(equipmentCatalog).catch(e => ({ error: e.message })),
+        gyms: await db.select({ count: sql<number>`count(*)` }).from(gyms).catch(e => ({ error: e.message })),
+        adminUsers: await db.select({ count: sql<number>`count(*)` }).from(adminUsers).catch(e => ({ error: e.message })),
       };
       
       const dbUrl = process.env.DATABASE_URL || "MISSING";
@@ -3084,18 +3104,21 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
 
       res.json({
         status: "ok",
+        version: APP_VERSION,
         counts,
         database: anonymizedUrl,
         schemaKeys: Object.keys(schema),
+        timestamp: new Date().toISOString(),
         env: {
           NODE_ENV: process.env.NODE_ENV,
           RAILWAY_ENVIRONMENT: process.env.RAILWAY_ENVIRONMENT,
-          PORT: process.env.PORT
+          PORT: process.env.PORT,
+          APP_VERSION
         }
       });
     } catch (error: any) {
-      console.error("[DEBUG-DB] Error:", error);
-      res.status(500).json({ error: error.message, stack: error.stack });
+      console.error("[DEBUG-DB] Fatal Error:", error);
+      res.status(500).json({ error: error.message, stack: error.stack, version: APP_VERSION });
     }
   });
 
