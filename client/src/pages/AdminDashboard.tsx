@@ -45,6 +45,13 @@ export default function AdminDashboard() {
     category: "strength",
     exerciseId: ""
   });
+  const [isCreatingEquipment, setIsCreatingEquipment] = useState(false);
+  const [newEqData, setNewEqData] = useState({
+    name: "",
+    nameEn: "",
+    category: "machine",
+    equipmentKey: ""
+  });
 
   const toggleId = (id: string) => {
     setSelectedIds(prev => 
@@ -126,6 +133,31 @@ export default function AdminDashboard() {
     onError: (error: Error) => {
       toast({ 
         title: "Kunde inte uppdatera utrustning", 
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  });
+
+  const createEquipmentMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", "/api/admin/equipment", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/equipment"] });
+      setIsCreatingEquipment(false);
+      setNewEqData({
+        name: "",
+        nameEn: "",
+        category: "machine",
+        equipmentKey: ""
+      });
+      toast({ title: "Utrustning skapad" });
+    },
+    onError: (error: Error) => {
+      toast({ 
+        title: "Kunde inte skapa utrustning", 
         description: error.message,
         variant: "destructive"
       });
@@ -609,11 +641,14 @@ export default function AdminDashboard() {
 
           <TabsContent value="equipment" className="animate-admin-fade">
              <Card className="admin-card overflow-hidden">
-              <CardHeader className="bg-muted/30 border-b">
+              <CardHeader className="bg-muted/30 border-b flex flex-row items-center justify-between py-3">
                 <CardTitle className="flex items-center gap-2">
                   <Dumbbell className="w-5 h-5 text-primary" />
                   Utrustningskatalog
                 </CardTitle>
+                <Button size="sm" onClick={() => setIsCreatingEquipment(true)} className="hover-elevate">
+                  <Plus className="w-4 h-4 mr-2" /> Lägg till utrustning
+                </Button>
               </CardHeader>
               <CardContent className="p-0">
                 <div className="p-4 bg-muted/10 border-b flex justify-between items-center h-16">
@@ -1015,6 +1050,73 @@ export default function AdminDashboard() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingEx(null)}>Avbryt</Button>
             <Button onClick={() => editingEx && updateExerciseMutation.mutate({ id: editingEx.id, data: { nameEn: editingEx.nameEn, exerciseId: editingEx.exerciseId } })}>Spara</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Create Equipment Dialog */}
+      <Dialog open={isCreatingEquipment} onOpenChange={setIsCreatingEquipment}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Lägg till ny utrustning</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Namn (SV)</label>
+              <Input 
+                value={newEqData.name} 
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setNewEqData(prev => ({ 
+                    ...prev, 
+                    name: val,
+                    equipmentKey: suggestId(val)
+                  }));
+                }} 
+                placeholder="t.ex. Benpress"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Namn (EN)</label>
+              <Input 
+                value={newEqData.nameEn} 
+                onChange={(e) => setNewEqData(prev => ({ ...prev, nameEn: e.target.value }))} 
+                placeholder="t.ex. Leg Press"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Kategori</label>
+              <select 
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={newEqData.category}
+                onChange={(e) => setNewEqData(prev => ({ ...prev, category: e.target.value }))}
+              >
+                <option value="machine">Machine</option>
+                <option value="free_weights">Free weights</option>
+                <option value="bodyweight">Bodyweight</option>
+                <option value="accessory">Accessory</option>
+                <option value="cardio">Cardio</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Equipment Key (V4)</label>
+              <Input 
+                value={newEqData.equipmentKey} 
+                onChange={(e) => setNewEqData(prev => ({ ...prev, equipmentKey: e.target.value }))} 
+                placeholder="t.ex. leg_press"
+              />
+              <p className="text-[10px] text-muted-foreground italic">
+                Används för logik och AI-matchning. Bör vara gemener med understreck.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCreatingEquipment(false)}>Avbryt</Button>
+            <Button 
+              onClick={() => createEquipmentMutation.mutate(newEqData)}
+              disabled={!newEqData.name || !newEqData.equipmentKey || createEquipmentMutation.isPending}
+            >
+              {createEquipmentMutation.isPending ? "Sparar..." : "Spara utrustning"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
