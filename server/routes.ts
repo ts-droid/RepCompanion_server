@@ -12,6 +12,7 @@ import {
 } from "./auth";
 import { sendMagicLinkEmail } from "./email-service";
 import jwt from "jsonwebtoken";
+import * as schema from "@shared/schema";
 import { insertUserProfileSchema, updateUserProfileSchema, insertGymSchema, updateGymSchema, insertEquipmentSchema, insertWorkoutSessionSchema, insertExerciseLogSchema, updateExerciseLogSchema, suggestAlternativeRequestSchema, suggestAlternativeResponseSchema, trackPromoImpressionSchema, trackAffiliateClickSchema, insertNotificationPreferencesSchema, promoIdParamSchema, promoPlacementParamSchema, generateProgramRequestSchema, exercises, exerciseLogs, workoutSessions, programTemplateExercises, unmappedExercises, equipmentCatalog, exerciseAliases, equipmentAliases, gyms, users, userTimeModel, adminUsers, type ExerciseLog } from "@shared/schema";
 import { z, ZodError } from "zod";
 import { generateWorkoutProgram, generateWorkoutProgramWithReasoner, generateWorkoutProgramWithVersionSwitch, generateWorkoutBlueprintV4WithOpenAI } from "./ai-service";
@@ -3064,6 +3065,37 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
       res.json({ usersCount });
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch admin stats" });
+    }
+  });
+
+  app.get("/api/admin/debug-db", requireAdminAuth, async (_req, res) => {
+    try {
+      const counts = {
+        users: await db.select({ count: sql<number>`count(*)` }).from(users),
+        exercises: await db.select({ count: sql<number>`count(*)` }).from(exercises),
+        unmapped: await db.select({ count: sql<number>`count(*)` }).from(unmappedExercises),
+        equipment: await db.select({ count: sql<number>`count(*)` }).from(equipmentCatalog),
+        gyms: await db.select({ count: sql<number>`count(*)` }).from(gyms),
+        adminUsers: await db.select({ count: sql<number>`count(*)` }).from(adminUsers),
+      };
+      
+      const dbUrl = process.env.DATABASE_URL || "MISSING";
+      const anonymizedUrl = dbUrl.replace(/:[^:@]+@/, ":****@");
+
+      res.json({
+        status: "ok",
+        counts,
+        database: anonymizedUrl,
+        schemaKeys: Object.keys(schema),
+        env: {
+          NODE_ENV: process.env.NODE_ENV,
+          RAILWAY_ENVIRONMENT: process.env.RAILWAY_ENVIRONMENT,
+          PORT: process.env.PORT
+        }
+      });
+    } catch (error: any) {
+      console.error("[DEBUG-DB] Error:", error);
+      res.status(500).json({ error: error.message, stack: error.stack });
     }
   });
 
