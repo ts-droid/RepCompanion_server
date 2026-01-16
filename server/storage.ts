@@ -1756,7 +1756,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async adminCreateEquipment(data: import("@shared/schema").InsertEquipmentCatalog): Promise<import("@shared/schema").EquipmentCatalog> {
-    const [inserted] = await db.insert(equipmentCatalog).values(data).returning();
+    const finalData = {
+      ...data,
+      type: data.type || data.category || "machine"
+    };
+    const [inserted] = await db.insert(equipmentCatalog).values(finalData).returning();
     return inserted;
   }
 
