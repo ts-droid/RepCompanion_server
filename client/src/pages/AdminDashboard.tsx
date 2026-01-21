@@ -1323,8 +1323,11 @@ export default function AdminDashboard() {
               >
                 <option value="machine">Machine</option>
                 <option value="free_weights">Free weights</option>
+                <option value="bench">Benches</option>
+                <option value="rack">Racks / Rigs</option>
                 <option value="bodyweight">Bodyweight</option>
                 <option value="accessory">Accessory</option>
+                <option value="attachment">Attachment</option>
                 <option value="cardio">Cardio</option>
               </select>
             </div>
@@ -1387,8 +1390,11 @@ export default function AdminDashboard() {
                 >
                   <option value="machine">Machine</option>
                   <option value="free_weights">Free weights</option>
+                  <option value="bench">Benches</option>
+                  <option value="rack">Racks / Rigs</option>
                   <option value="bodyweight">Bodyweight</option>
                   <option value="accessory">Accessory</option>
+                  <option value="attachment">Attachment</option>
                   <option value="cardio">Cardio</option>
                 </select>
               </div>
