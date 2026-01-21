@@ -17,7 +17,7 @@ import { useLocation } from "wouter";
 import "@/admin.css";
 
 type EnhancedExercise = Exercise & { aliases?: string[] };
-type EnhancedEquipment = EquipmentCatalog & { aliases?: string[] };
+type EnhancedEquipment = EquipmentCatalog & { aliases?: { id: string; alias: string; lang: string }[] };
 type EnhancedGym = Gym & { equipmentCount?: number; equipmentKeys?: string[]; userEmail?: string };
 
 const suggestId = (name: string) => {
@@ -43,6 +43,7 @@ export default function AdminDashboard() {
   const [showMergeDialog, setShowMergeDialog] = useState(false);
   const [masterId, setMasterId] = useState<string>("");
   const [isCreatingNew, setIsCreatingNew] = useState(false);
+  const [showTranslations, setShowTranslations] = useState(false);
   const [newExData, setNewExData] = useState({
     nameEn: "",
     category: "strength",
@@ -199,6 +200,9 @@ export default function AdminDashboard() {
           alias: mappingUnmapped.aiName,
           lang: 'sv'
         });
+        
+        // Also delete the unmapped exercise record
+        deleteMutation.mutate({ type: 'unmapped-exercises', id: mappingUnmapped.id });
       }
       queryClient.invalidateQueries({ queryKey: ["/api/admin/exercises"] });
       setIsCreatingNew(false);
@@ -232,7 +236,6 @@ export default function AdminDashboard() {
   });
 
   const createAliasMutation = useMutation({
-    // ... same as before
     mutationFn: async (data: { exerciseId: string; alias: string; lang: string }) => {
       const res = await apiRequest("POST", "/api/admin/exercise-aliases", {
         ...data,
@@ -241,6 +244,10 @@ export default function AdminDashboard() {
       return res.json();
     },
     onSuccess: () => {
+      // If we were mapping an unmapped exercise, delete it now
+      if (mappingUnmapped) {
+        deleteMutation.mutate({ type: 'unmapped-exercises', id: mappingUnmapped.id });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/admin/unmapped-exercises"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/exercises"] }); // Refresh so we see new aliases
       setMappingUnmapped(null);
@@ -253,6 +260,38 @@ export default function AdminDashboard() {
         description: error.message,
         variant: "destructive"
       });
+    }
+  });
+
+  const createEquipmentAliasMutation = useMutation({
+    mutationFn: async (data: { equipmentKey: string; alias: string; lang: string }) => {
+      const res = await apiRequest("POST", "/api/admin/equipment-aliases", {
+        ...data,
+        source: 'admin'
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/equipment"] });
+      setNewAlias("");
+      toast({ title: "Utrustningsalias skapat" });
+    },
+    onError: (error: Error) => {
+      toast({ 
+        title: "Kunde inte skapa alias", 
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  });
+
+  const deleteEquipmentAliasMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/admin/equipment-aliases/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/equipment"] });
+      toast({ title: "Alias borttaget" });
     }
   });
 
@@ -506,15 +545,27 @@ export default function AdminDashboard() {
           <TabsContent value="exercises" className="animate-admin-fade">
             <div className="space-y-4">
               <div className="flex justify-between items-center gap-4 bg-muted/20 p-4 rounded-xl border glass-panel">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input 
-                    placeholder="Sök övningar..." 
-                    className="pl-9 bg-background border-none shadow-inner"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                </div>
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <Search className="w-4 h-4 text-muted-foreground" />
+                      <Input 
+                        placeholder="Sök övningar..." 
+                        className="h-9 w-64 bg-background"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 bg-background border rounded-lg px-3 py-1.5 h-9">
+                      <Checkbox 
+                        id="showTranslationsEx" 
+                        checked={showTranslations}
+                        onCheckedChange={(checked) => setShowTranslations(!!checked)}
+                      />
+                      <label htmlFor="showTranslationsEx" className="text-xs font-medium cursor-pointer select-none">
+                        Visa översättningar
+                      </label>
+                    </div>
+                  </div>
                 <Button className="hover-elevate shadow-lg shadow-primary/20">
                   <Plus className="w-4 h-4 mr-2" /> Ny övning
                 </Button>
@@ -569,7 +620,7 @@ export default function AdminDashboard() {
                          </TableHead>
                          <TableHead className="w-[120px]">V4 ID</TableHead>
                         <TableHead>Namn (SV)</TableHead>
-                        <TableHead>Namn (EN)</TableHead>
+                        {showTranslations && <TableHead>Namn (EN)</TableHead>}
                         <TableHead>Kategori</TableHead>
                         <TableHead>Utrustning</TableHead>
                         <TableHead>Video</TableHead>
@@ -595,14 +646,14 @@ export default function AdminDashboard() {
                           <TableCell className="font-semibold">
                             <div className="flex flex-col">
                               <span>{ex.name}</span>
-                              {ex.aliases && ex.aliases.length > 0 && (
+                              {showTranslations && ex.aliases && ex.aliases.length > 0 && (
                                 <span className="text-[10px] text-muted-foreground italic">
                                   Alias: {ex.aliases.join(", ")}
                                 </span>
                               )}
                             </div>
                           </TableCell>
-                          <TableCell className="text-muted-foreground">{ex.nameEn || "-"}</TableCell>
+                          {showTranslations && <TableCell className="text-muted-foreground">{ex.nameEn || "-"}</TableCell>}
                           <TableCell>
                             <Badge variant="secondary" className="font-normal capitalize">{ex.category}</Badge>
                           </TableCell>
@@ -684,7 +735,17 @@ export default function AdminDashboard() {
               </CardHeader>
               <CardContent className="p-0">
                 <div className="p-4 bg-muted/10 border-b flex justify-between items-center h-16">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 bg-background border rounded-lg px-3 py-1.5 h-9">
+                      <Checkbox 
+                        id="showTranslationsEq" 
+                        checked={showTranslations}
+                        onCheckedChange={(checked) => setShowTranslations(!!checked)}
+                      />
+                      <label htmlFor="showTranslationsEq" className="text-xs font-medium cursor-pointer select-none">
+                        Visa översättningar
+                      </label>
+                    </div>
                     {selectedIds.length > 0 && (
                       <>
                         <span className="text-sm font-medium text-muted-foreground mr-2">
@@ -720,7 +781,7 @@ export default function AdminDashboard() {
                         />
                       </TableHead>
                       <TableHead>Namn (SV)</TableHead>
-                      <TableHead>Namn (EN)</TableHead>
+                      {showTranslations && <TableHead>Namn (EN)</TableHead>}
                       <TableHead>Kategori</TableHead>
                       <TableHead>Key</TableHead>
                       <TableHead className="text-right">Åtgärder</TableHead>
@@ -738,14 +799,14 @@ export default function AdminDashboard() {
                         <TableCell className="font-semibold">
                           <div className="flex flex-col">
                             <span>{eq.name}</span>
-                            {eq.aliases && eq.aliases.length > 0 && (
+                            {showTranslations && eq.aliases && eq.aliases.length > 0 && (
                               <span className="text-[10px] text-muted-foreground italic">
-                                Alias: {eq.aliases.join(", ")}
+                                Alias: {eq.aliases.map(a => a.alias).join(", ")}
                               </span>
                             )}
                           </div>
                         </TableCell>
-                        <TableCell className="text-muted-foreground">{eq.nameEn || "-"}</TableCell>
+                        {showTranslations && <TableCell className="text-muted-foreground">{eq.nameEn || "-"}</TableCell>}
                         <TableCell><Badge variant="outline" className="capitalize">{eq.category}</Badge></TableCell>
                         <TableCell className="text-xs font-mono">{eq.equipmentKey}</TableCell>
                         <TableCell className="text-right">
@@ -803,7 +864,17 @@ export default function AdminDashboard() {
               </CardHeader>
               <CardContent className="p-0">
                 <div className="p-4 bg-muted/10 border-b flex justify-between items-center h-16">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 bg-background border rounded-lg px-3 py-1.5 h-9">
+                      <Checkbox 
+                        id="showTranslationsEq" 
+                        checked={showTranslations}
+                        onCheckedChange={(checked) => setShowTranslations(!!checked)}
+                      />
+                      <label htmlFor="showTranslationsEq" className="text-xs font-medium cursor-pointer select-none">
+                        Visa översättningar
+                      </label>
+                    </div>
                     {selectedIds.length > 0 && (
                       <>
                         <span className="text-sm font-medium text-muted-foreground mr-2">
@@ -1261,6 +1332,122 @@ export default function AdminDashboard() {
             >
               {createEquipmentMutation.isPending ? "Sparar..." : "Spara utrustning"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Edit Equipment Dialog */}
+      <Dialog open={!!editingEq} onOpenChange={() => {
+        setEditingEq(null);
+        setNewAlias("");
+      }}>
+        <DialogContent className="admin-dialog-top md:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Redigera utrustning</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Namn (SV)</label>
+                <Input value={editingEq?.name || ""} onChange={(e) => setEditingEq(prev => prev ? { ...prev, name: e.target.value } : null)} />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Equipment Key (V4)</label>
+                <Input value={editingEq?.equipmentKey || ""} onChange={(e) => setEditingEq(prev => prev ? { ...prev, equipmentKey: e.target.value } : null)} />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Namn (EN)</label>
+                <Input value={editingEq?.nameEn || ""} onChange={(e) => setEditingEq(prev => prev ? { ...prev, nameEn: e.target.value } : null)} />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Kategori</label>
+                <select 
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  value={editingEq?.category || "machine"}
+                  onChange={(e) => setEditingEq(prev => prev ? { ...prev, category: e.target.value } : null)}
+                >
+                  <option value="machine">Machine</option>
+                  <option value="free_weights">Free weights</option>
+                  <option value="bodyweight">Bodyweight</option>
+                  <option value="accessory">Accessory</option>
+                  <option value="cardio">Cardio</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-3 bg-muted/30 p-4 rounded-lg border border-muted-foreground/10">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-sm font-bold flex items-center gap-1">
+                     <Plus className="w-3 h-3 text-primary" /> Aliases (for AI matching)
+                  </label>
+                  <Badge variant="outline" className="text-[9px]">EN PRIORITIZED</Badge>
+                </div>
+                
+                <div className="flex gap-2">
+                  <Input 
+                    placeholder="t.ex. leg press machine" 
+                    className="h-8 text-xs"
+                    value={newAlias}
+                    onChange={(e) => setNewAlias(e.target.value)}
+                  />
+                  <Button 
+                    size="sm" 
+                    className="h-8 px-2"
+                    disabled={!newAlias || !editingEq?.equipmentKey || createEquipmentAliasMutation.isPending}
+                    onClick={() => {
+                      if (editingEq?.equipmentKey) {
+                        createEquipmentAliasMutation.mutate({
+                          equipmentKey: editingEq.equipmentKey,
+                          alias: newAlias,
+                          lang: 'en'
+                        });
+                      }
+                    }}
+                  >
+                    {createEquipmentAliasMutation.isPending ? "..." : <Plus className="w-3 h-3" />}
+                  </Button>
+                </div>
+
+                <div className="space-y-1.5 max-h-[150px] overflow-y-auto pr-1 custom-scrollbar pt-1">
+                  {editingEq?.aliases && editingEq.aliases.length > 0 ? (
+                    editingEq.aliases.map((a) => (
+                      <div key={a.id} className="flex items-center justify-between bg-background/50 border rounded px-2 py-1 text-xs group">
+                        <span className="truncate max-w-[150px]">{a.alias}</span>
+                        <div className="flex items-center gap-1">
+                          <Badge variant="outline" className="text-[8px] h-3.5 px-1 uppercase opacity-50 group-hover:opacity-100">{a.lang}</Badge>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-5 w-5 text-muted-foreground hover:text-destructive"
+                            onClick={() => deleteEquipmentAliasMutation.mutate(a.id)}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-[10px] text-muted-foreground italic text-center py-2">Inga alias tillagda</p>
+                  )}
+                </div>
+                <p className="text-[9px] text-muted-foreground leading-tight italic mt-1">
+                  AI-matching prioriterar engelska alias. Lägg till vanliga variationer här.
+                </p>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingEq(null)}>Avbryt</Button>
+            <Button onClick={() => {
+              if (editingEq) {
+                const { id, aliases, ...data } = editingEq;
+                updateEquipmentMutation.mutate({ id, data });
+              }
+            }}>Spara</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

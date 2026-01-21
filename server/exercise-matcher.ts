@@ -18,8 +18,8 @@ export function normalizeName(name: string): string {
   if (!name) return "";
   return name
     .toLowerCase()
-    .replace(/[^\w\s]/g, '') // Remove punctuation
-    .replace(/\s+/g, ' ')    // Normalize whitespace
+    .replace(/[^a-z0-9åäö\s]/g, '') // Remove punctuation but keep Swedish chars
+    .replace(/\s+/g, ' ')           // Normalize whitespace
     .trim();
 }
 

@@ -2330,15 +2330,6 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
 
   // ========== ADMIN ROUTES ==========
   
-  app.get("/api/admin/unmapped-exercises", requireAdminAuth, async (req: any, res) => {
-    try {
-      const { getUnmappedExercises } = await import("./exercise-matcher");
-      const unmappedExercises = await getUnmappedExercises();
-      res.json(unmappedExercises);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch unmapped exercises" });
-    }
-  });
 
   app.get("/api/admin/exercises/export-csv", isAuthenticatedOrDev, async (req: any, res) => {
     try {
@@ -2538,8 +2529,8 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
       const data = await db.select().from(equipmentCatalog).orderBy(equipmentCatalog.name);
       
       const enhancedData = await Promise.all(data.map(async (item) => {
-        const aliases = await db.select().from(equipmentAliases).where(eq(equipmentAliases.equipmentKey, item.equipmentKey || ""));
-        return { ...item, aliases: aliases.map(a => a.alias) };
+        const aliasesList = await db.select().from(equipmentAliases).where(eq(equipmentAliases.equipmentKey, item.equipmentKey || ""));
+        return { ...item, aliases: aliasesList };
       }));
       
       res.json(enhancedData);
@@ -2571,8 +2562,18 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     try {
       const alias = await storage.adminCreateEquipmentAlias(req.body);
       res.json(alias);
+    } catch (error: any) {
+      console.error("[ADMIN API] Failed to create equipment alias:", error);
+      res.status(500).json({ message: error.message || "Failed to create equipment alias" });
+    }
+  });
+
+  app.delete("/api/admin/equipment-aliases/:id", requireAdminAuth, async (req: any, res) => {
+    try {
+      await storage.adminDeleteEquipmentAlias(req.params.id);
+      res.json({ success: true });
     } catch (error) {
-      res.status(500).json({ message: "Failed to create equipment alias" });
+      res.status(500).json({ message: "Failed to delete equipment alias" });
     }
   });
 

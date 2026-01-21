@@ -1789,8 +1789,27 @@ export class DatabaseStorage implements IStorage {
   }
 
   async adminCreateEquipmentAlias(data: import("@shared/schema").InsertEquipmentAlias): Promise<import("@shared/schema").EquipmentAlias> {
-    const [alias] = await db.insert(equipmentAliases).values(data).returning();
+    const norm = normalizeName(data.alias);
+    const [alias] = await db.insert(equipmentAliases)
+      .values({
+        ...data,
+        aliasNorm: norm
+      })
+      .onConflictDoUpdate({
+        target: equipmentAliases.aliasNorm,
+        set: {
+          equipmentKey: data.equipmentKey,
+          alias: data.alias,
+          lang: data.lang || 'en',
+          source: data.source || 'admin'
+        }
+      })
+      .returning();
     return alias;
+  }
+
+  async adminDeleteEquipmentAlias(id: string): Promise<void> {
+    await db.delete(equipmentAliases).where(eq(equipmentAliases.id, id));
   }
 
   async adminGetAllGyms(): Promise<import("@shared/schema").Gym[]> {
