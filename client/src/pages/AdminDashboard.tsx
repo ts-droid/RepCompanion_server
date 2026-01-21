@@ -1136,6 +1136,14 @@ export default function AdminDashboard() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
             <div className="space-y-4">
               <div className="space-y-2">
+                <label className="text-sm font-medium">Namn (EN)</label>
+                <Input 
+                  value={editingEx?.nameEn || ""} 
+                  onChange={(e) => setEditingEx(prev => prev ? { ...prev, nameEn: e.target.value } : null)}
+                />
+              </div>
+
+              <div className="space-y-2">
                 <label className="text-sm font-medium">Namn (SV)</label>
                 <Input value={editingEx?.name || ""} disabled className="bg-muted" />
               </div>
@@ -1146,14 +1154,6 @@ export default function AdminDashboard() {
                   value={editingEx?.exerciseId || ""} 
                   onChange={(e) => setEditingEx(prev => prev ? { ...prev, exerciseId: e.target.value } : null)}
                   placeholder="t.ex. barbell_bench_press"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Namn (EN)</label>
-                <Input 
-                  value={editingEx?.nameEn || ""} 
-                  onChange={(e) => setEditingEx(prev => prev ? { ...prev, nameEn: e.target.value } : null)}
                 />
               </div>
 
@@ -1280,6 +1280,14 @@ export default function AdminDashboard() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
+              <label className="text-sm font-medium">Namn (EN)</label>
+              <Input 
+                value={newEqData.nameEn} 
+                onChange={(e) => setNewEqData(prev => ({ ...prev, nameEn: e.target.value }))} 
+                placeholder="t.ex. Leg Press"
+              />
+            </div>
+            <div className="space-y-2">
               <label className="text-sm font-medium">Namn (SV)</label>
               <Input 
                 value={newEqData.name} 
@@ -1292,14 +1300,6 @@ export default function AdminDashboard() {
                   }));
                 }} 
                 placeholder="t.ex. Benpress"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Namn (EN)</label>
-              <Input 
-                value={newEqData.nameEn} 
-                onChange={(e) => setNewEqData(prev => ({ ...prev, nameEn: e.target.value }))} 
-                placeholder="t.ex. Leg Press"
               />
             </div>
             <div className="space-y-2">
@@ -1352,6 +1352,11 @@ export default function AdminDashboard() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
             <div className="space-y-4">
               <div className="space-y-2">
+                <label className="text-sm font-medium">Namn (EN)</label>
+                <Input value={editingEq?.nameEn || ""} onChange={(e) => setEditingEq(prev => prev ? { ...prev, nameEn: e.target.value } : null)} />
+              </div>
+
+              <div className="space-y-2">
                 <label className="text-sm font-medium">Namn (SV)</label>
                 <Input value={editingEq?.name || ""} onChange={(e) => setEditingEq(prev => prev ? { ...prev, name: e.target.value } : null)} />
               </div>
@@ -1359,11 +1364,6 @@ export default function AdminDashboard() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">Equipment Key (V4)</label>
                 <Input value={editingEq?.equipmentKey || ""} onChange={(e) => setEditingEq(prev => prev ? { ...prev, equipmentKey: e.target.value } : null)} />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Namn (EN)</label>
-                <Input value={editingEq?.nameEn || ""} onChange={(e) => setEditingEq(prev => prev ? { ...prev, nameEn: e.target.value } : null)} />
               </div>
 
               <div className="space-y-2">
