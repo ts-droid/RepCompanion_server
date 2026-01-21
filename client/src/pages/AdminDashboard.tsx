@@ -1283,7 +1283,14 @@ export default function AdminDashboard() {
               <label className="text-sm font-medium">Namn (EN)</label>
               <Input 
                 value={newEqData.nameEn} 
-                onChange={(e) => setNewEqData(prev => ({ ...prev, nameEn: e.target.value }))} 
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setNewEqData(prev => ({ 
+                    ...prev, 
+                    nameEn: val,
+                    equipmentKey: suggestId(val)
+                  }));
+                }} 
                 placeholder="t.ex. Leg Press"
               />
             </div>
@@ -1291,14 +1298,7 @@ export default function AdminDashboard() {
               <label className="text-sm font-medium">Namn (SV)</label>
               <Input 
                 value={newEqData.name} 
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setNewEqData(prev => ({ 
-                    ...prev, 
-                    name: val,
-                    equipmentKey: suggestId(val)
-                  }));
-                }} 
+                onChange={(e) => setNewEqData(prev => ({ ...prev, name: e.target.value }))} 
                 placeholder="t.ex. Benpress"
               />
             </div>
