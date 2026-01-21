@@ -2468,7 +2468,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
 
   app.get("/api/admin/exercises", requireAdminAuth, async (req: any, res) => {
     try {
-      const data = await db.select().from(exercises).orderBy(exercises.name);
+      const data = await db.select().from(exercises).orderBy(exercises.nameEn);
       
       const enhancedData = await Promise.all(data.map(async (ex) => {
         const aliases = await db.select().from(exerciseAliases).where(eq(exerciseAliases.exerciseId, ex.exerciseId || ""));
@@ -2526,7 +2526,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
 
   app.get("/api/admin/equipment", requireAdminAuth, async (req: any, res) => {
     try {
-      const data = await db.select().from(equipmentCatalog).orderBy(equipmentCatalog.name);
+      const data = await db.select().from(equipmentCatalog).orderBy(equipmentCatalog.nameEn);
       
       const enhancedData = await Promise.all(data.map(async (item) => {
         const aliasesList = await db.select().from(equipmentAliases).where(eq(equipmentAliases.equipmentKey, item.equipmentKey || ""));

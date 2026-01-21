@@ -1001,8 +1001,12 @@ export default function AdminDashboard() {
                     value={newAlias}
                   >
                     <option value="">Välj övning...</option>
-                    {exercises?.map(ex => (
-                      <option key={ex.id} value={ex.id}>{ex.name} {ex.exerciseId ? `(${ex.exerciseId})` : "(Saknar V4 ID!)"}</option>
+                    {exercises?.sort((a, b) => (a.nameEn || a.name).localeCompare(b.nameEn || b.name)).map(ex => (
+                      <option key={ex.id} value={ex.id}>
+                        {ex.nameEn || ex.name} 
+                        {ex.nameEn && ex.nameEn !== ex.name ? ` (${ex.name})` : ""}
+                        {ex.exerciseId ? ` [${ex.exerciseId}]` : " (Saknar V4 ID!)"}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -1483,10 +1487,10 @@ export default function AdminDashboard() {
                   >
                     <div className="flex flex-col">
                       <span className="font-bold flex items-center gap-2">
-                        {ex.name}
+                        {ex.nameEn || ex.name}
                         {ex.exerciseId && <Badge variant="outline" className="text-[9px] h-4 py-0 group-hover:bg-primary/10">{ex.exerciseId}</Badge>}
                       </span>
-                      <span className="text-xs text-muted-foreground">{ex.nameEn || 'Inget engelskt namn'}</span>
+                      <span className="text-xs text-muted-foreground">{ex.name && ex.name !== ex.nameEn ? ex.name : ""}</span>
                     </div>
                     {masterId === id && <Check className="w-5 h-5 text-primary" />}
                   </div>
@@ -1499,8 +1503,8 @@ export default function AdminDashboard() {
                 <p className="flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
                   <span>
-                    Den andra övningen ({(exercises as EnhancedExercise[])?.find(e => selectedIds.includes(e.id) && e.id !== masterId)?.name}) 
-                    kommer att **raderas permanent**. All historik flyttas till {(exercises as EnhancedExercise[])?.find(e => e.id === masterId)?.name}.
+                    Den andra övningen ({(exercises as EnhancedExercise[])?.find(e => selectedIds.includes(e.id) && e.id !== masterId)?.nameEn || (exercises as EnhancedExercise[])?.find(e => selectedIds.includes(e.id) && e.id !== masterId)?.name}) 
+                    kommer att **raderas permanent**. All historik flyttas till {(exercises as EnhancedExercise[])?.find(e => e.id === masterId)?.nameEn || (exercises as EnhancedExercise[])?.find(e => e.id === masterId)?.name}.
                   </span>
                 </p>
               </div>
