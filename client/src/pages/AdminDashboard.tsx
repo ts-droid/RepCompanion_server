@@ -619,8 +619,8 @@ export default function AdminDashboard() {
                            />
                          </TableHead>
                          <TableHead className="w-[120px]">V4 ID</TableHead>
-                        <TableHead>Namn (SV)</TableHead>
-                        {showTranslations && <TableHead>Namn (EN)</TableHead>}
+                        <TableHead>Namn (EN)</TableHead>
+                        {showTranslations && <TableHead>Namn (SV)</TableHead>}
                         <TableHead>Kategori</TableHead>
                         <TableHead>Utrustning</TableHead>
                         <TableHead>Video</TableHead>
@@ -645,15 +645,15 @@ export default function AdminDashboard() {
                            </TableCell>
                           <TableCell className="font-semibold">
                             <div className="flex flex-col">
-                              <span>{ex.name}</span>
-                              {showTranslations && ex.aliases && ex.aliases.length > 0 && (
+                              <span>{ex.nameEn || ex.name}</span>
+                              {ex.aliases && ex.aliases.length > 0 && (
                                 <span className="text-[10px] text-muted-foreground italic">
                                   Alias: {ex.aliases.join(", ")}
                                 </span>
                               )}
                             </div>
                           </TableCell>
-                          {showTranslations && <TableCell className="text-muted-foreground">{ex.nameEn || "-"}</TableCell>}
+                          {showTranslations && <TableCell className="text-muted-foreground">{ex.name || "-"}</TableCell>}
                           <TableCell>
                             <Badge variant="secondary" className="font-normal capitalize">{ex.category}</Badge>
                           </TableCell>
@@ -780,8 +780,8 @@ export default function AdminDashboard() {
                           }}
                         />
                       </TableHead>
-                      <TableHead>Namn (SV)</TableHead>
-                      {showTranslations && <TableHead>Namn (EN)</TableHead>}
+                      <TableHead>Namn (EN)</TableHead>
+                      {showTranslations && <TableHead>Namn (SV)</TableHead>}
                       <TableHead>Kategori</TableHead>
                       <TableHead>Key</TableHead>
                       <TableHead className="text-right">Åtgärder</TableHead>
@@ -798,15 +798,15 @@ export default function AdminDashboard() {
                         </TableCell>
                         <TableCell className="font-semibold">
                           <div className="flex flex-col">
-                            <span>{eq.name}</span>
-                            {showTranslations && eq.aliases && eq.aliases.length > 0 && (
+                            <span>{eq.nameEn || eq.name}</span>
+                            {eq.aliases && eq.aliases.length > 0 && (
                               <span className="text-[10px] text-muted-foreground italic">
                                 Alias: {eq.aliases.map(a => a.alias).join(", ")}
                               </span>
                             )}
                           </div>
                         </TableCell>
-                        {showTranslations && <TableCell className="text-muted-foreground">{eq.nameEn || "-"}</TableCell>}
+                        {showTranslations && <TableCell className="text-muted-foreground">{eq.name || "-"}</TableCell>}
                         <TableCell><Badge variant="outline" className="capitalize">{eq.category}</Badge></TableCell>
                         <TableCell className="text-xs font-mono">{eq.equipmentKey}</TableCell>
                         <TableCell className="text-right">
