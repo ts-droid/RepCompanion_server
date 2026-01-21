@@ -18,7 +18,7 @@ import "@/admin.css";
 
 type EnhancedExercise = Exercise & { aliases?: string[] };
 type EnhancedEquipment = EquipmentCatalog & { aliases?: { id: string; alias: string; lang: string }[] };
-type EnhancedGym = Gym & { equipmentCount?: number; equipmentKeys?: string[]; userEmail?: string };
+type EnhancedGym = Gym & { equipmentCount?: number; equipment?: { name: string; key: string | null }[]; userEmail?: string };
 
 const suggestId = (name: string) => {
   return name.toLowerCase()
@@ -47,7 +47,10 @@ export default function AdminDashboard() {
   const [newExData, setNewExData] = useState({
     nameEn: "",
     category: "strength",
-    exerciseId: ""
+    exerciseId: "",
+    difficulty: "beginner",
+    primaryMuscles: [] as string[],
+    requiredEquipment: [] as string[]
   });
   const [isCreatingEquipment, setIsCreatingEquipment] = useState(false);
   const [newEqData, setNewEqData] = useState({
@@ -489,10 +492,13 @@ export default function AdminDashboard() {
                               setMappingUnmapped(item);
                               setIsCreatingNew(false);
                               setNewAlias("");
-                              setNewExData({
+                               setNewExData({
                                 nameEn: item.aiName,
                                 category: "strength",
-                                exerciseId: suggestId(item.aiName)
+                                exerciseId: suggestId(item.aiName),
+                                difficulty: "beginner",
+                                primaryMuscles: [],
+                                requiredEquipment: []
                               });
                             }} className="hover-elevate">
                               <Check className="w-4 h-4 mr-2" /> Matcha
@@ -1030,10 +1036,13 @@ export default function AdminDashboard() {
                   <p className="text-xs text-muted-foreground">Hittar du inte övningen?</p>
                   <Button variant="outline" size="sm" onClick={() => {
                     setIsCreatingNew(true);
-                    setNewExData({
+                     setNewExData({
                       nameEn: mappingUnmapped?.aiName || "",
                       category: "strength",
-                      exerciseId: suggestId(mappingUnmapped?.aiName || "")
+                      exerciseId: suggestId(mappingUnmapped?.aiName || ""),
+                      difficulty: "beginner",
+                      primaryMuscles: [],
+                      requiredEquipment: []
                     });
                   }}>
                     <Plus className="w-4 h-4 mr-2" /> Skapa som ny övning
@@ -1112,12 +1121,15 @@ export default function AdminDashboard() {
               <Button 
                 disabled={!newExData.exerciseId || createExerciseMutation.isPending}
                 onClick={() => {
-                  createExerciseMutation.mutate({
+                    createExerciseMutation.mutate({
                     name: mappingUnmapped?.aiName || "",
                     nameEn: newExData.nameEn,
                     category: newExData.category,
-                    exerciseId: newExData.exerciseId
-                  });
+                    exerciseId: newExData.exerciseId,
+                    difficulty: newExData.difficulty,
+                    primaryMuscles: newExData.primaryMuscles,
+                    requiredEquipment: newExData.requiredEquipment
+                  } as any);
                 }}
               >
                 {createExerciseMutation.isPending ? "Sparar..." : "Skapa & Koppla"}
@@ -1523,6 +1535,82 @@ export default function AdminDashboard() {
             >
               {mergeExercisesMutation.isPending ? "Slår samman..." : "Slå samman nu"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Edit Gym Dialog */}
+      <Dialog open={!!editingGym} onOpenChange={() => setEditingGym(null)}>
+        <DialogContent className="admin-dialog-top md:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Redigera gym</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            <div className="grid grid-cols-1 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Gymnamn</label>
+                <Input 
+                  value={editingGym?.name || ""} 
+                  onChange={(e) => setEditingGym(prev => prev ? { ...prev, name: e.target.value } : null)} 
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Adress / Plats</label>
+                <Input 
+                  value={editingGym?.location || ""} 
+                  onChange={(e) => setEditingGym(prev => prev ? { ...prev, location: e.target.value } : null)} 
+                />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-sm font-bold flex items-center gap-2">
+                <Dumbbell className="w-4 h-4 text-primary" />
+                Registrerad utrustning ({editingGym?.equipmentCount || 0} st)
+              </label>
+              
+              <div className="border rounded-lg overflow-hidden">
+                <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                  {editingGym?.equipment && editingGym.equipment.length > 0 ? (
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted/50 sticky top-0">
+                        <tr>
+                          <th className="text-left py-2 px-3 font-medium">Utrustning</th>
+                          <th className="text-left py-2 px-3 font-medium">V4 Key</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {editingGym.equipment.map((eq, i) => (
+                          <tr key={i} className="hover:bg-muted/20 transition-colors">
+                            <td className="py-2 px-3">{eq.name}</td>
+                            <td className="py-2 px-3">
+                              {eq.key ? (
+                                <Badge variant="outline" className="text-[10px] font-mono">{eq.key}</Badge>
+                              ) : (
+                                <span className="text-[10px] text-muted-foreground italic">Ingen nyckel</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <div className="py-10 text-center text-muted-foreground bg-muted/10">
+                      <p className="text-sm">Ingen utrustning registrerad på detta gym.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingGym(null)}>Avbryt</Button>
+            <Button onClick={() => {
+              if (editingGym) {
+                const { id, equipmentCount, equipment, userEmail, ...data } = editingGym;
+                updateGymMutation.mutate({ id, data });
+              }
+            }}>Spara ändringar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

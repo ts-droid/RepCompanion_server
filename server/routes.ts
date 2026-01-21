@@ -2598,12 +2598,12 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
       // Fetch equipment for each gym
       const enhancedData = await Promise.all(
         data.map(async (gym) => {
-          const equipmentKeys = await storage.adminGetGymEquipment(gym.id);
+          const equipment = await storage.adminGetGymEquipment(gym.id);
           
           return {
             ...gym,
-            equipmentCount: equipmentKeys.length,
-            equipmentKeys: equipmentKeys,
+            equipmentCount: equipment.length,
+            equipment: equipment,
           };
         })
       );

@@ -1846,9 +1846,22 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async adminGetGymEquipment(gymId: string): Promise<string[]> {
-    const eqList = await db.select().from(userEquipment).where(eq(userEquipment.gymId, gymId));
-    return eqList.map(e => e.equipmentKey).filter((key): key is string => key !== null);
+  async adminGetGymEquipment(gymId: string): Promise<{name: string, key: string | null}[]> {
+    const eqList = await db
+      .select({
+        name: userEquipment.equipmentName,
+        key: userEquipment.equipmentKey,
+        catalogName: equipmentCatalog.name,
+        catalogKey: equipmentCatalog.equipmentKey
+      })
+      .from(userEquipment)
+      .leftJoin(equipmentCatalog, eq(userEquipment.equipmentName, equipmentCatalog.id))
+      .where(eq(userEquipment.gymId, gymId));
+
+    return eqList.map(e => ({
+      name: e.catalogName || e.name,
+      key: e.key || e.catalogKey || null
+    }));
   }
 
   async adminDeleteExercise(id: string): Promise<void> {
