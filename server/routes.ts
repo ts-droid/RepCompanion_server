@@ -2466,6 +2466,22 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
+  app.get("/api/admin/v4-catalog", requireAdminAuth, async (req: any, res) => {
+    try {
+      const fs = await import("fs");
+      const path = await import("path");
+      const catalogPath = path.resolve(process.cwd(), "server/data/exercises.json");
+      if (fs.existsSync(catalogPath)) {
+        const catalog = JSON.parse(fs.readFileSync(catalogPath, "utf-8"));
+        res.json(catalog);
+      } else {
+        res.status(404).json({ message: "V4 catalog not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch V4 catalog" });
+    }
+  });
+
   app.get("/api/admin/exercises", requireAdminAuth, async (req: any, res) => {
     try {
       const data = await db.select().from(exercises).orderBy(exercises.nameEn);

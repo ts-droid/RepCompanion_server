@@ -102,6 +102,10 @@ export default function AdminDashboard() {
   });
 
   // Handle 401 errors
+  const { data: v4Catalog } = useQuery<any[]>({
+    queryKey: ["/api/admin/v4-catalog"],
+  });
+
   const anyError: any = statsError || unmappedError || exercisesError || equipmentError || gymsError;
   if (anyError && anyError.status === 401) {
     setLocation("/admin/login");
@@ -1035,14 +1039,21 @@ export default function AdminDashboard() {
                 <div className="flex flex-col items-center gap-2 pt-2 border-t mt-4">
                   <p className="text-xs text-muted-foreground">Hittar du inte övningen?</p>
                   <Button variant="outline" size="sm" onClick={() => {
+                    const aiName = mappingUnmapped?.aiName || "";
+                    const normAiName = aiName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const matchedV4 = v4Catalog?.find(v => 
+                      v.name.toLowerCase().replace(/[^a-z0-9]/g, '') === normAiName ||
+                      v.id.toLowerCase().replace(/[^a-z0-9]/g, '') === normAiName
+                    );
+
                     setIsCreatingNew(true);
-                     setNewExData({
-                      nameEn: mappingUnmapped?.aiName || "",
-                      category: "strength",
-                      exerciseId: suggestId(mappingUnmapped?.aiName || ""),
-                      difficulty: "beginner",
-                      primaryMuscles: [],
-                      requiredEquipment: []
+                    setNewExData({
+                      nameEn: matchedV4?.name || aiName,
+                      category: matchedV4?.category || "strength",
+                      exerciseId: matchedV4?.id || suggestId(aiName),
+                      difficulty: matchedV4?.difficulty?.toLowerCase() || "beginner",
+                      primaryMuscles: matchedV4?.primary_muscle_group ? [matchedV4.primary_muscle_group] : [],
+                      requiredEquipment: matchedV4?.equipment ? [matchedV4.equipment] : []
                     });
                   }}>
                     <Plus className="w-4 h-4 mr-2" /> Skapa som ny övning
