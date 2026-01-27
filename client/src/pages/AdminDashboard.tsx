@@ -1409,8 +1409,10 @@ export default function AdminDashboard() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">Utrustning (separera med kommatecken)</label>
                 <Input 
+                  type="text"
                   value={editingEx?.requiredEquipment?.join(", ") || ""} 
                   onChange={(e) => setEditingEx(prev => prev ? { ...prev, requiredEquipment: e.target.value.split(",").map(s => s.trim()).filter(Boolean) } : null)}
+                  onKeyDown={(e) => { if (e.key === ',') e.stopPropagation(); }}
                   placeholder="barbell, bench"
                 />
               </div>
@@ -1418,8 +1420,10 @@ export default function AdminDashboard() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">Primära Muskler (kommatecken)</label>
                 <Input 
+                  type="text"
                   value={editingEx?.primaryMuscles?.join(", ") || ""} 
                   onChange={(e) => setEditingEx(prev => prev ? { ...prev, primaryMuscles: e.target.value.split(",").map(s => s.trim()).filter(Boolean) } : null)}
+                  onKeyDown={(e) => { if (e.key === ',') e.stopPropagation(); }}
                   placeholder="chest, triceps"
                 />
               </div>
@@ -1427,8 +1431,10 @@ export default function AdminDashboard() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">Sekundära Muskler (kommatecken)</label>
                 <Input 
+                  type="text"
                   value={editingEx?.secondaryMuscles?.join(", ") || ""} 
                   onChange={(e) => setEditingEx(prev => prev ? { ...prev, secondaryMuscles: e.target.value.split(",").map(s => s.trim()).filter(Boolean) } : null)}
+                  onKeyDown={(e) => { if (e.key === ',') e.stopPropagation(); }}
                   placeholder="shoulders"
                 />
               </div>

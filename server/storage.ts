@@ -519,8 +519,8 @@ export class DatabaseStorage implements IStorage {
 
     const gymsWithDistance = publicGyms
       .map(gym => {
-        const gymLat = gym.latitude ? parseFloat(gym.latitude) : null;
-        const gymLng = gym.longitude ? parseFloat(gym.longitude) : null;
+        const gymLat = gym.latitude ? parseFloat(gym.latitude.replace(',', '.')) : null;
+        const gymLng = gym.longitude ? parseFloat(gym.longitude.replace(',', '.')) : null;
         
         if (gymLat === null || gymLng === null || isNaN(gymLat) || isNaN(gymLng)) {
           return null;
