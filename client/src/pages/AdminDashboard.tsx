@@ -1106,7 +1106,7 @@ export default function AdminDashboard() {
                         <TableHead>Email</TableHead>
                         <TableHead>Namn</TableHead>
                         <TableHead>Skapad</TableHead>
-                        <TableHead>Senast inloggad</TableHead>
+                        <TableHead>Senast aktiv</TableHead>
                         <TableHead className="text-right">Åtgärder</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -1119,13 +1119,20 @@ export default function AdminDashboard() {
                               onCheckedChange={() => toggleId(user.id)}
                             />
                           </TableCell>
-                          <TableCell className="font-medium">{user.email || user.username}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-col">
+                              <span className="font-medium">{user.email || user.username}</span>
+                              {user.isPremium && (
+                                <Badge variant="outline" className="w-fit text-[10px] bg-amber-500/10 text-amber-500 border-amber-500/20 mt-0.5">Premium</Badge>
+                              )}
+                            </div>
+                          </TableCell>
                           <TableCell>{user.displayName || user.profile?.displayName || "-"}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">
                             {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : "-"}
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground">
-                             {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : "-"}
+                             {user.lastActiveAt ? new Date(user.lastActiveAt).toLocaleString() : (user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : "-")}
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-1">
@@ -1486,14 +1493,22 @@ export default function AdminDashboard() {
               />
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Replit ID (om tillämpligt)</label>
-              <Input 
-                value={editingUser?.replitId || ""} 
-                onChange={(e) => setEditingUser(prev => prev ? { ...prev, replitId: e.target.value } : null)} 
+            <div className="flex items-center space-x-2 pt-2">
+              <Checkbox 
+                id="isPremium" 
+                checked={editingUser?.isPremium || false} 
+                onCheckedChange={(checked) => setEditingUser(prev => prev ? { ...prev, isPremium: !!checked } : null)}
               />
+              <label htmlFor="isPremium" className="text-sm font-medium leading-none cursor-pointer">
+                Premium-användare
+              </label>
             </div>
-          </div>
+            {editingUser?.lastActiveAt && (
+              <div className="text-xs text-muted-foreground mt-4">
+                Senast aktiv: {new Date(editingUser.lastActiveAt).toLocaleString()}
+              </div>
+            )}
+           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingUser(null)}>Avbryt</Button>
             <Button onClick={() => {

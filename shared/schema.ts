@@ -25,6 +25,8 @@ export const users = pgTable("users", {
   profileImageUrl: varchar("profile_image_url"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  lastActiveAt: timestamp("last_active_at"),
+  isPremium: boolean("is_premium").default(false),
 });
 
 export type UpsertUser = typeof users.$inferInsert;
@@ -101,6 +103,8 @@ export const userProfiles = pgTable("user_profiles", {
   
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  lastActiveAt: timestamp("last_active_at"),
+  isPremium: boolean("is_premium").default(false),
 });
 
 // Admin users - separate authentication system for dashboard access

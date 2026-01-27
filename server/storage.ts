@@ -175,6 +175,7 @@ export interface IStorage {
   getUserTimeModel(userId: string): Promise<import("@shared/schema").UserTimeModel | undefined>;
   getExercisesByIds(ids: string[]): Promise<any[]>;
   getCandidatePools(userId: string, gymId?: string): Promise<import("@shared/schema").CandidatePool[]>;
+  updateUserActivity(userId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2117,6 +2118,12 @@ export class DatabaseStorage implements IStorage {
   async adminGetUsersCount(): Promise<number> {
     const result = await db.select({ count: sql<number>`count(*)` }).from(users);
     return Number(result[0].count);
+  }
+
+  async updateUserActivity(userId: string): Promise<void> {
+    await db.update(users)
+      .set({ lastActiveAt: new Date() })
+      .where(eq(users.id, userId));
   }
 }
 
