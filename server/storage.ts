@@ -74,6 +74,12 @@ export interface IStorage {
   upsertUserProfile(profile: InsertUserProfile): Promise<UserProfile>;
   updateUserProfile(userId: string, data: UpdateUserProfile): Promise<UserProfile>;
   
+  // Admin User Management
+  adminGetAllUsers(): Promise<(User & { profile?: UserProfile })[]>;
+  adminUpdateUser(id: string, data: Partial<User>): Promise<User>;
+  adminDeleteUser(id: string): Promise<void>;
+  adminDeleteUsersBatch(ids: string[]): Promise<void>;
+  
   // Gym operations
   createGym(gym: InsertGym): Promise<Gym>;
   getGym(id: string): Promise<Gym | undefined>;
@@ -1859,7 +1865,6 @@ export class DatabaseStorage implements IStorage {
         set: {
           equipmentKey: data.equipmentKey,
           alias: data.alias,
-          lang: data.lang || 'en',
           source: data.source || 'admin'
         }
       })
@@ -1867,6 +1872,36 @@ export class DatabaseStorage implements IStorage {
     return alias;
   }
 
+  async adminGetAllUsers(): Promise<(User & { profile?: UserProfile })[]> {
+    const allUsers = await db.select().from(users).orderBy(desc(users.createdAt));
+    const userIds = allUsers.map(u => u.id);
+    
+    if (userIds.length === 0) return [];
+    
+    const allProfiles = await db.select().from(userProfiles).where(inArray(userProfiles.userId, userIds));
+    const profileMap = new Map<string, UserProfile>();
+    allProfiles.forEach(p => profileMap.set(p.userId, p));
+    
+    return allUsers.map(u => ({
+      ...u,
+      profile: profileMap.get(u.id)
+    }));
+  }
+
+  async adminUpdateUser(id: string, data: Partial<User>): Promise<User> {
+    const [updated] = await db.update(users).set(data).where(eq(users.id, id)).returning();
+    return updated;
+  }
+
+  async adminDeleteUser(id: string): Promise<void> {
+    // Due to ON DELETE CASCADE, this will delete sessions, profiles, gyms, equipment, logs, etc.
+    await db.delete(users).where(eq(users.id, id));
+  }
+
+  async adminDeleteUsersBatch(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    await db.delete(users).where(inArray(users.id, ids));
+  }
   async adminDeleteEquipmentAlias(id: string): Promise<void> {
     await db.delete(equipmentAliases).where(eq(equipmentAliases.id, id));
   }

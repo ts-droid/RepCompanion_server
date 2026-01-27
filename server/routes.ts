@@ -2789,6 +2789,45 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
+  // Admin User Management
+  app.get("/api/admin/users", requireAdminAuth, async (_req, res) => {
+    try {
+      const users = await storage.adminGetAllUsers();
+      res.json(users);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+
+  app.put("/api/admin/users/:id", requireAdminAuth, async (req: any, res) => {
+    try {
+      const updated = await storage.adminUpdateUser(req.params.id, req.body);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update user" });
+    }
+  });
+
+  app.delete("/api/admin/users/:id", requireAdminAuth, async (req: any, res) => {
+    try {
+      await storage.adminDeleteUser(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete user" });
+    }
+  });
+
+  app.post("/api/admin/users/delete-batch", requireAdminAuth, async (req: any, res) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids)) return res.status(400).json({ message: "IDs must be an array" });
+      await storage.adminDeleteUsersBatch(ids);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete users" });
+    }
+  });
+
   // ========== DEDICATED ADMIN USER AUTHENTICATION ==========
   
   const { hashPassword, verifyPassword, validatePasswordStrength, generateTOTPSecret, verifyTOTP, generateAdminJWT, verifyAdminJWT } = await import("./adminUserAuth");

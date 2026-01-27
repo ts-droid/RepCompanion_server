@@ -44,6 +44,7 @@ export default function AdminDashboard() {
   const [masterId, setMasterId] = useState<string>("");
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [showTranslations, setShowTranslations] = useState(false);
+  const [editingUser, setEditingUser] = useState<any | null>(null);
   const [newExData, setNewExData] = useState({
     nameEn: "",
     category: "strength",
@@ -98,6 +99,11 @@ export default function AdminDashboard() {
 
   const { data: gyms, isError: isGymsError, error: gymsError } = useQuery<Gym[]>({
     queryKey: ["/api/admin/gyms"],
+    retry: false,
+  });
+
+  const { data: adminUsers, isError: isUsersError } = useQuery<any[]>({
+    queryKey: ["/api/admin/users"],
     retry: false,
   });
 
@@ -184,6 +190,25 @@ export default function AdminDashboard() {
     onError: (error: Error) => {
       toast({ 
         title: "Kunde inte uppdatera gym", 
+        description: error.message,
+        variant: "destructive"
+      });
+    }
+  });
+
+  const updateUserMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const res = await apiRequest("PUT", `/api/admin/users/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      setEditingUser(null);
+      toast({ title: "Användare uppdaterad" });
+    },
+    onError: (error: Error) => {
+      toast({ 
+        title: "Kunde inte uppdatera användare", 
         description: error.message,
         variant: "destructive"
       });
@@ -299,7 +324,7 @@ export default function AdminDashboard() {
   });
 
   const bulkDeleteMutation = useMutation({
-    mutationFn: async ({ type, ids }: { type: 'exercises' | 'equipment' | 'gyms' | 'unmapped-exercises'; ids: string[] }) => {
+    mutationFn: async ({ type, ids }: { type: 'exercises' | 'equipment' | 'gyms' | 'unmapped-exercises' | 'users'; ids: string[] }) => {
       const res = await apiRequest("POST", `/api/admin/${type}/delete-batch`, { ids });
       return res.json();
     },
@@ -339,6 +364,7 @@ export default function AdminDashboard() {
       case 'equipment': return 'Utrustning';
       case 'gyms': return 'Gym';
       case 'unmapped-exercises': return 'Omatchade övningar';
+      case 'users': return 'Användare';
       default: return 'Objekt';
     }
   }
@@ -370,7 +396,7 @@ export default function AdminDashboard() {
         </div>
 
         <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6 animate-admin-fade">
-          <TabsList className="grid grid-cols-2 md:grid-cols-5 h-auto gap-2 p-1 border rounded-xl glass-panel">
+          <TabsList className="grid grid-cols-3 md:grid-cols-6 h-auto gap-2 p-1 border rounded-xl glass-panel">
             <TabsTrigger value="overview" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all duration-300">Översikt</TabsTrigger>
             <TabsTrigger value="unmapped" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all duration-300 relative">
               Omatchade
@@ -383,6 +409,7 @@ export default function AdminDashboard() {
             <TabsTrigger value="exercises" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all duration-300">Övningar</TabsTrigger>
             <TabsTrigger value="equipment" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all duration-300">Utrustning</TabsTrigger>
             <TabsTrigger value="gyms" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all duration-300">Gym</TabsTrigger>
+            <TabsTrigger value="users" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all duration-300">Användare</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="animate-admin-fade delay-1">
@@ -1333,6 +1360,52 @@ export default function AdminDashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Create Equipment Dialog */}
+
+      {/* Edit User Dialog */}
+      <Dialog open={!!editingUser} onOpenChange={() => setEditingUser(null)}>
+        <DialogContent className="admin-dialog-top md:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Redigera användare</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Email</label>
+              <Input 
+                value={editingUser?.email || ""} 
+                onChange={(e) => setEditingUser(prev => prev ? { ...prev, email: e.target.value } : null)} 
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Display Name</label>
+              <Input 
+                value={editingUser?.displayName || ""} 
+                onChange={(e) => setEditingUser(prev => prev ? { ...prev, displayName: e.target.value } : null)} 
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Replit ID (om tillämpligt)</label>
+              <Input 
+                value={editingUser?.replitId || ""} 
+                onChange={(e) => setEditingUser(prev => prev ? { ...prev, replitId: e.target.value } : null)} 
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingUser(null)}>Avbryt</Button>
+            <Button onClick={() => {
+              if (editingUser) {
+                const { id, profile, ...data } = editingUser;
+                // Only send updateable User fields
+                updateUserMutation.mutate({ id, data });
+              }
+            }}>Spara ändringar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
       {/* Create Equipment Dialog */}
       <Dialog open={isCreatingEquipment} onOpenChange={setIsCreatingEquipment}>
         <DialogContent className="admin-dialog-top">
