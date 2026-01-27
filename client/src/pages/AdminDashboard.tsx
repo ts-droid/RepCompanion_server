@@ -467,7 +467,9 @@ export default function AdminDashboard() {
                         />
                       </TableHead>
                       <TableHead>AI Namn</TableHead>
-                      <TableHead>Antal träffar</TableHead>
+                      <TableHead>Kategori / Muskler</TableHead>
+                      <TableHead>Utrustning</TableHead>
+                      <TableHead>Antal</TableHead>
                       <TableHead>Senast sedd</TableHead>
                       <TableHead className="text-right">Åtgärd</TableHead>
                     </TableRow>
@@ -481,11 +483,38 @@ export default function AdminDashboard() {
                             onCheckedChange={() => toggleId(item.id)}
                           />
                         </TableCell>
-                        <TableCell className="font-semibold">{item.aiName}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="bg-background">{item.count} ggr</Badge>
+                        <TableCell className="font-semibold">
+                          <div>{item.aiName}</div>
+                          {item.difficulty && (
+                            <Badge variant="secondary" className="text-[9px] h-4 px-1 mt-1 font-normal opacity-70">
+                              {item.difficulty}
+                            </Badge>
+                          )}
                         </TableCell>
-                        <TableCell className="text-muted-foreground text-sm">{new Date(item.lastSeen).toLocaleDateString()}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs font-medium capitalize">{item.category || "-"}</span>
+                            <div className="flex flex-wrap gap-1">
+                              {item.primaryMuscles?.slice(0, 3).map((m: string, i: number) => (
+                                <span key={i} className="text-[10px] text-muted-foreground bg-muted px-1 rounded">{m}</span>
+                              ))}
+                              {item.primaryMuscles && item.primaryMuscles.length > 3 && <span className="text-[10px] text-muted-foreground">+{item.primaryMuscles.length - 3}</span>}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1 max-w-[150px]">
+                            {item.equipment?.slice(0, 2).map((e: string, i: number) => (
+                              <Badge key={i} variant="outline" className="text-[9px] px-1 h-4">{e}</Badge>
+                            ))}
+                            {item.equipment && item.equipment.length > 2 && <span className="text-[9px] text-muted-foreground">+{item.equipment.length - 2}</span>}
+                            {(!item.equipment || item.equipment.length === 0) && <span className="text-xs text-muted-foreground">-</span>}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="bg-background text-xs">{item.count} st</Badge>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-[10px]">{new Date(item.lastSeen).toLocaleDateString()}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
                             <Button size="sm" onClick={() => {
@@ -494,11 +523,11 @@ export default function AdminDashboard() {
                               setNewAlias("");
                                setNewExData({
                                 nameEn: item.aiName,
-                                category: "strength",
+                                category: item.category || "strength",
                                 exerciseId: suggestId(item.aiName),
-                                difficulty: "beginner",
-                                primaryMuscles: [],
-                                requiredEquipment: []
+                                difficulty: item.difficulty || "beginner",
+                                primaryMuscles: item.primaryMuscles || [],
+                                requiredEquipment: item.equipment || []
                               });
                             }} className="hover-elevate">
                               <Check className="w-4 h-4 mr-2" /> Matcha

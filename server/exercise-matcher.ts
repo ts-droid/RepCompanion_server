@@ -105,11 +105,19 @@ interface MatchResult {
   distance?: number;
 }
 
+export interface ExerciseMetadata {
+  category?: string;
+  equipment?: string[];
+  primaryMuscles?: string[];
+  secondaryMuscles?: string[];
+  difficulty?: string;
+}
+
 /**
  * Match an AI-generated exercise name to our catalog
  * Returns the canonical English name if found, or null if no match
  */
-export async function matchExercise(aiGeneratedName: string): Promise<MatchResult> {
+export async function matchExercise(aiGeneratedName: string, metadata?: ExerciseMetadata): Promise<MatchResult> {
   // Step 0: Try exact match on exerciseId (ID/Slug/UUID) - common in V4 blueprints
   const idMatch = await db
     .select()
@@ -254,9 +262,10 @@ export async function matchExercise(aiGeneratedName: string): Promise<MatchResul
     };
   }
 
-  // Fallback: log as unmapped if creation fails
-  await logUnmappedExercise(aiGeneratedName, null);
-
+  // No match found - log for review
+  console.log(`[MATCHER] No match found for "${aiGeneratedName}", logging unmapped`);
+  await logUnmappedExercise(aiGeneratedName, null, metadata);
+  
   return {
     matched: false,
     exerciseName: null,
@@ -341,7 +350,7 @@ async function createExerciseFromAI(aiGeneratedName: string): Promise<{ name: st
  * Log an unmapped exercise for admin review
  * Increments count if already exists, creates new entry otherwise
  */
-async function logUnmappedExercise(aiName: string, suggestedMatch: string | null) {
+async function logUnmappedExercise(aiName: string, suggestedMatch: string | null, metadata?: ExerciseMetadata) {
   try {
     // Try to find existing unmapped exercise
     const existing = await db
@@ -357,6 +366,12 @@ async function logUnmappedExercise(aiName: string, suggestedMatch: string | null
         .set({
           count: sql`${unmappedExercises.count} + 1`,
           lastSeen: new Date(),
+          // Update metadata if provided and currently missing
+          category: metadata?.category || existing[0].category,
+          equipment: metadata?.equipment || existing[0].equipment,
+          primaryMuscles: metadata?.primaryMuscles || existing[0].primaryMuscles,
+          secondaryMuscles: metadata?.secondaryMuscles || existing[0].secondaryMuscles,
+          difficulty: metadata?.difficulty || existing[0].difficulty,
         })
         .where(eq(unmappedExercises.aiName, aiName));
     } else {
@@ -367,6 +382,11 @@ async function logUnmappedExercise(aiName: string, suggestedMatch: string | null
         count: 1,
         firstSeen: new Date(),
         lastSeen: new Date(),
+        category: metadata?.category,
+        equipment: metadata?.equipment,
+        primaryMuscles: metadata?.primaryMuscles,
+        secondaryMuscles: metadata?.secondaryMuscles,
+        difficulty: metadata?.difficulty,
       });
     }
   } catch (error) {

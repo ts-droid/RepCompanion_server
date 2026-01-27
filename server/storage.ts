@@ -1218,16 +1218,28 @@ export class DatabaseStorage implements IStorage {
       
       for (let j = 0; j < exercises.length; j++) {
         const exercise = exercises[j];
-        const exerciseName = exercise.exerciseTitle || exercise.exerciseName || exercise.name || 'Unknown';
+        const exerciseName = exercise.name || exercise.exerciseTitle || exercise.exerciseName || 'Unknown';
         const exerciseKey = exercise.exerciseKey || `ex_${i}_${j}`;
-        const referenceWeight = getReferenceWeight(exerciseName);
         
-        console.log(`[STORAGE] Adding exercise ${j + 1}: ${exerciseName}`);
+        // Match exercise to catalog and log metadata if unmapped
+        const matchResult = await matchExercise(exerciseName, {
+          category: exercise.category,
+          equipment: exercise.equipment ? [exercise.equipment] : [],
+          primaryMuscles: exercise.primaryMuscles,
+          secondaryMuscles: exercise.secondaryMuscles,
+          difficulty: exercise.difficulty
+        });
+
+        // For V2, we are more lenient: use the matched name if found, otherwise keep original
+        const finalExerciseName = matchResult.matched ? (matchResult.exerciseName || exerciseName) : exerciseName;
+        const referenceWeight = getReferenceWeight(finalExerciseName);
+        
+        console.log(`[STORAGE] Adding exercise ${j + 1}: ${finalExerciseName}${matchResult.matched ? '' : ' (UNMAPPED)'}`);
         
         await db.insert(programTemplateExercises).values({
           templateId: template.id,
           exerciseKey: exerciseKey,
-          exerciseName: exerciseName,
+          exerciseName: finalExerciseName,
           orderIndex: j,
           targetSets: parseInt(exercise.sets) || 3,
           targetReps: exercise.reps || '8-12',
@@ -1491,7 +1503,13 @@ export class DatabaseStorage implements IStorage {
         const exercise = mainWorkExercises[j];
         const aiGeneratedName = exercise.exercise_name || 'Unknown';
         
-        const matchResult = await matchExercise(aiGeneratedName);
+        const matchResult = await matchExercise(aiGeneratedName, {
+          category: exercise.category,
+          equipment: exercise.required_equipment,
+          primaryMuscles: exercise.primary_muscles,
+          secondaryMuscles: exercise.secondary_muscles,
+          difficulty: exercise.difficulty
+        });
         
         // CRITICAL: Only accept matched exercises with English names
         // Do NOT fall back to aiGeneratedName if match fails
@@ -1946,7 +1964,6 @@ export class DatabaseStorage implements IStorage {
     if (!source || !target) {
       throw new Error("Source or target exercise not found");
     }
-
     // We use exerciseId (slug like 'bench_press') as the primary key for logic, 
     // falling back to the UUID id if exerciseId is missing
     const sourceKey = source.exerciseId || source.id;

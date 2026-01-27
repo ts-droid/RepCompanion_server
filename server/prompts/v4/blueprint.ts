@@ -55,6 +55,7 @@ export function buildBlueprintSystemPromptV4(): string {
     "- Return exercise_id only (no exercise names).",
     "- Use English only for all text fields.",
     "- Provide priority per exercise: 1=protect, 2=adjustable, 3=remove first.",
+    "- For EVERY exercise, provide complete metadata (category, required_equipment, primary_muscles, secondary_muscles, difficulty).",
     "- Keep sessions balanced across the week (~48h recovery for the same primary muscle groups where possible).",
     "- Respect the time_model. Try to land within allowed_duration_minutes, but the server will enforce final fitting.",
   ].join("\n");
@@ -89,7 +90,12 @@ export function buildBlueprintUserPromptV4(input: V4BlueprintInput): string {
                     load_type: "percentage_1rm|rpe|bodyweight|fixed",
                     load_value: 8,
                     priority: 2,
-                    notes: null
+                    notes: null,
+                    category: "string",
+                    required_equipment: ["string"],
+                    primary_muscles: ["string"],
+                    secondary_muscles: ["string"],
+                    difficulty: "Nybörjare|Medel|Avancerad"
                   }
                 ]
               }

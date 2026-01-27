@@ -71,6 +71,10 @@ const exerciseSchema = z.object({
   notes: z.string().optional(),
   equipment: z.array(z.string()).min(0),
   muscleGroups: z.array(z.string()).optional(),
+  category: z.string().optional(),
+  primaryMuscles: z.array(z.string()).optional(),
+  secondaryMuscles: z.array(z.string()).optional(),
+  difficulty: z.string().optional(),
 });
 
 const sessionSchema = z.object({
@@ -120,6 +124,10 @@ const weeklySessionSchema = z.object({
     target_muscles: z.array(z.string()),
     required_equipment: z.array(z.string()),
     technique_cues: z.array(z.string()),
+    category: z.string().optional(),
+    primary_muscles: z.array(z.string()).optional(),
+    secondary_muscles: z.array(z.string()).optional(),
+    difficulty: z.string().optional(),
   })),
   cooldown: z.array(z.object({
     exercise_name: z.string(),
@@ -168,6 +176,10 @@ const exerciseSchemaV2 = z.object({
   restSeconds: z.number().int().min(0).max(600),
   intensity: z.string().optional(), // Only in compact mode
   estimatedExerciseDurationMinutes: z.number().optional(), // Only in compact mode
+  category: z.string().optional(),
+  primaryMuscles: z.array(z.string()).optional(),
+  secondaryMuscles: z.array(z.string()).optional(),
+  difficulty: z.string().optional(),
 });
 
 const sessionSchemaV2 = z.object({
@@ -235,6 +247,11 @@ const v4BlueprintSchema = z.object({
         load_value: z.number().nullable(),
         priority: z.number().min(1).max(3),
         notes: z.string().nullable(),
+        category: z.string().optional(),
+        required_equipment: z.array(z.string()).optional(),
+        primary_muscles: z.array(z.string()).optional(),
+        secondary_muscles: z.array(z.string()).optional(),
+        difficulty: z.string().optional(),
       }))
     }))
   }))

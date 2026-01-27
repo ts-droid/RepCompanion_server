@@ -94,7 +94,11 @@ Svara ENDAST med JSON:
           "equipment": string,
           "sets": number,
           "reps": string,
-          "restSeconds": number
+          "restSeconds": number,
+          "category": string (e.g. "Styrka", "Kondition", "Rörlighet"),
+          "primaryMuscles": string[],
+          "secondaryMuscles": string[],
+          "difficulty": string (e.g. "Nybörjare", "Medel", "Avancerad")
         }
       ]
     }
@@ -224,7 +228,11 @@ Svara ENDAST med ett JSON-objekt enligt denna struktur (ingen text före eller e
               "reps": string,
               "intensity": string,
               "restSeconds": number,
-              "estimatedExerciseDurationMinutes": number
+              "estimatedExerciseDurationMinutes": number,
+              "category": string,
+              "primaryMuscles": string[],
+              "secondaryMuscles": string[],
+              "difficulty": string
             }
           ]
         }
