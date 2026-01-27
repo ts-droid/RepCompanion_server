@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { exercises, unmappedExercises, exerciseAliases as exerciseAliasesTable } from "@shared/schema";
-import { eq, sql, or } from "drizzle-orm";
+import { exercises, unmappedExercises, exerciseAliases as exerciseAliasesTable, userProfiles, userEquipment, UserEquipment } from "@shared/schema";
+import { eq, sql, or, and } from "drizzle-orm";
 
 /**
  * Exercise Matching System
@@ -100,6 +100,7 @@ for (const [canonical, aliases] of Object.entries(exerciseAliases)) {
 interface MatchResult {
   matched: boolean;
   exerciseName: string | null;
+  exerciseId: string | null;
   confidence: 'exact' | 'alias' | 'fuzzy' | 'none';
   distance?: number;
 }
@@ -109,6 +110,23 @@ interface MatchResult {
  * Returns the canonical English name if found, or null if no match
  */
 export async function matchExercise(aiGeneratedName: string): Promise<MatchResult> {
+  // Step 0: Try exact match on exerciseId (ID/Slug/UUID) - common in V4 blueprints
+  const idMatch = await db
+    .select()
+    .from(exercises)
+    .where(or(eq(exercises.exerciseId, aiGeneratedName), eq(exercises.id, aiGeneratedName)))
+    .limit(1);
+
+  if (idMatch.length > 0) {
+    const exercise = idMatch[0];
+    return {
+      matched: true,
+      exerciseName: exercise.nameEn || exercise.name,
+      exerciseId: exercise.exerciseId || exercise.id,
+      confidence: 'exact',
+    };
+  }
+
   const normalized = normalizeName(aiGeneratedName);
   
   // Step 1: Try exact match on normalized nameEn (ENGLISH ONLY - nameEn must exist)
@@ -123,9 +141,19 @@ export async function matchExercise(aiGeneratedName: string): Promise<MatchResul
     .limit(1);
 
   if (exactMatch.length > 0) {
+    const exercise = exactMatch[0];
+    const canonicalName = exercise.nameEn || exercise.name;
+    const matchedExerciseId = exercise.exerciseId || exercise.id;
+
+    // If it matched exactly but is a variation, save it as an alias
+    if (normalized !== normalizeName(exercise.nameEn || "") && normalized !== normalizeName(exercise.name)) {
+      await saveExerciseAlias(matchedExerciseId, aiGeneratedName);
+    }
+
     return {
       matched: true,
-      exerciseName: exactMatch[0].nameEn!, // Always exists due to WHERE clause
+      exerciseName: canonicalName,
+      exerciseId: matchedExerciseId,
       confidence: 'exact',
     };
   }
@@ -149,9 +177,11 @@ export async function matchExercise(aiGeneratedName: string): Promise<MatchResul
       .limit(1);
 
     if (matchedEx.length > 0) {
+      const exercise = matchedEx[0];
       return {
         matched: true,
-        exerciseName: matchedEx[0].nameEn || matchedEx[0].name,
+        exerciseName: exercise.nameEn || exercise.name,
+        exerciseId: exercise.exerciseId || exercise.id,
         confidence: 'alias',
       };
     }
@@ -169,9 +199,11 @@ export async function matchExercise(aiGeneratedName: string): Promise<MatchResul
       .limit(1);
 
     if (aliasMatch.length > 0) {
+      const exercise = aliasMatch[0];
       return {
         matched: true,
-        exerciseName: aliasMatch[0].nameEn!, // Always exists due to WHERE clause
+        exerciseName: exercise.nameEn!, // Always exists due to WHERE clause
+        exerciseId: exercise.exerciseId || exercise.id,
         confidence: 'alias',
       };
     }
@@ -198,21 +230,26 @@ export async function matchExercise(aiGeneratedName: string): Promise<MatchResul
   }
 
   if (bestMatch) {
+    const matchedExerciseId = bestMatch.exerciseId || bestMatch.id;
+    await saveExerciseAlias(matchedExerciseId, aiGeneratedName);
+
     return {
       matched: true,
-      exerciseName: bestMatch.nameEn!, // Always exists due to WHERE clause
+      exerciseName: bestMatch.nameEn || bestMatch.name,
+      exerciseId: matchedExerciseId,
       confidence: 'fuzzy',
       distance: bestDistance,
     };
   }
 
   // Step 4: No match found - auto-expand catalog
-  const newExerciseName = await createExerciseFromAI(aiGeneratedName);
+  const newExercise = await createExerciseFromAI(aiGeneratedName);
   
-  if (newExerciseName) {
+  if (newExercise) {
     return {
       matched: true,
-      exerciseName: newExerciseName,
+      exerciseName: newExercise.name,
+      exerciseId: newExercise.exerciseId,
       confidence: 'none', // Auto-created, no prior match
     };
   }
@@ -223,6 +260,7 @@ export async function matchExercise(aiGeneratedName: string): Promise<MatchResul
   return {
     matched: false,
     exerciseName: null,
+    exerciseId: null,
     confidence: 'none',
   };
 }
@@ -231,7 +269,7 @@ export async function matchExercise(aiGeneratedName: string): Promise<MatchResul
  * Auto-expand catalog: Create new exercise from AI-generated name
  * Tries to determine if name is Swedish or English and populates accordingly
  */
-async function createExerciseFromAI(aiGeneratedName: string): Promise<string | null> {
+async function createExerciseFromAI(aiGeneratedName: string): Promise<{ name: string; exerciseId: string } | null> {
   try {
     // Check if name looks like a UUID or is just a hex string (AI error)
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(aiGeneratedName);
@@ -253,7 +291,11 @@ async function createExerciseFromAI(aiGeneratedName: string): Promise<string | n
       .limit(1);
 
     if (existing.length > 0) {
-      return existing[0].nameEn || existing[0].name;
+      const ex = existing[0];
+      return { 
+        name: ex.nameEn || ex.name, 
+        exerciseId: ex.exerciseId || ex.id 
+      };
     }
 
     // Determine if name is likely Swedish or English based on character set
@@ -285,7 +327,10 @@ async function createExerciseFromAI(aiGeneratedName: string): Promise<string | n
 
     console.log(`[AUTO-EXPAND] Created new exercise: ${newExercise.nameEn || newExercise.name} (AI-generated)`);
 
-    return newExercise.nameEn || newExercise.name;
+    return {
+      name: newExercise.nameEn!,
+      exerciseId: newExercise.exerciseId!
+    };
   } catch (error) {
     console.error(`[AUTO-EXPAND] Failed to create exercise "${aiGeneratedName}":`, error);
     return null;
@@ -341,12 +386,34 @@ export async function getUnmappedExercises() {
 }
 
 /**
+ * Helper to save an exercise alias to the database
+ */
+async function saveExerciseAlias(exerciseId: string, alias: string, lang: string = 'en') {
+  try {
+    const normalized = normalizeName(alias);
+    if (!normalized) return;
+
+    await db.insert(exerciseAliasesTable).values({
+      exerciseId,
+      alias,
+      aliasNorm: normalized,
+      lang,
+      source: 'ai_match'
+    }).onConflictDoNothing();
+    
+    console.log(`[ALIAS] Saved alias "${alias}" for exercise ${exerciseId}`);
+  } catch (error) {
+    console.warn(`[ALIAS] Failed to save alias "${alias}" for exercise ${exerciseId}:`, error);
+  }
+}
+
+/**
  * Helper to serialize exercise with guaranteed nameEn fallback
  * Ensures nameEn is never undefined in AI prompts
  */
-function serializeExercise(ex: any): { id: number; nameEn: string; name: string; youtubeUrl: string | null } {
+function serializeExercise(ex: any): { id: string; nameEn: string; name: string; youtubeUrl: string | null } {
   return {
-    id: ex.id,
+    id: ex.exerciseId || ex.id,
     nameEn: ex.nameEn || ex.name || 'Unknown Exercise',
     name: ex.name || 'Unknown Exercise',
     youtubeUrl: ex.youtubeUrl,
@@ -363,12 +430,11 @@ function serializeExercise(ex: any): { id: number; nameEn: string; name: string;
 export async function filterExercisesByUserEquipment(
   userId: string, 
   gymId?: string
-): Promise<Array<{ id: number; nameEn: string; name: string; youtubeUrl: string | null }>> {
+): Promise<Array<{ id: string; nameEn: string; name: string; youtubeUrl: string | null }>> {
   try {
     // Get user's selected gym if gymId not provided
     let targetGymId = gymId;
     if (!targetGymId) {
-      const { userProfiles } = await import("@shared/schema");
       const [profile] = await db
         .select()
         .from(userProfiles)
@@ -379,8 +445,7 @@ export async function filterExercisesByUserEquipment(
     }
 
     // Get user's equipment (gym-specific or all if no gym selected)
-    const { userEquipment } = await import("@shared/schema");
-    let userEq;
+    let userEq: UserEquipment[];
     
     if (targetGymId) {
       // Get equipment for specific gym
@@ -388,7 +453,10 @@ export async function filterExercisesByUserEquipment(
         .select()
         .from(userEquipment)
         .where(
-          sql`${userEquipment.userId} = ${userId} AND ${userEquipment.gymId} = ${targetGymId}`
+          and(
+            eq(userEquipment.userId, userId),
+            eq(userEquipment.gymId, targetGymId)
+          )
         );
       console.log(`[EXERCISE FILTER] Filtering for gym ${targetGymId}`);
     } else {
@@ -396,7 +464,7 @@ export async function filterExercisesByUserEquipment(
       userEq = await db
         .select()
         .from(userEquipment)
-        .where(sql`${userEquipment.userId} = ${userId}`);
+        .where(eq(userEquipment.userId, userId));
       console.log(`[EXERCISE FILTER] No gym selected - using aggregate equipment`);
     }
 
@@ -448,12 +516,23 @@ export async function filterExercisesByUserEquipment(
         return true;
       }
 
+      // Check user's equipment by key first, then by name
+      const availableKeys = userEq.map(ue => ue.equipmentKey).filter(Boolean) as string[];
+      const availableNames = userEq.map(ue => ue.equipmentName ? normalizeName(ue.equipmentName) : "");
+
       // Check if ALL required equipment (excluding 'unknown') is available
-      const allAvailable = filteredRequired.every(req => 
-        availableEquipment.some(avail => 
-          avail.includes(req) || req.includes(avail)
-        )
-      );
+      const allAvailable = filteredRequired.every(req => {
+        // 1. Direct key match (e.g. "barbell" == "barbell")
+        if (availableKeys.includes(req)) return true;
+        
+        // 2. Fuzzy key match (e.g. "barbell" in "standard_barbell")
+        if (availableKeys.some((key: string) => key.includes(req) || req.includes(key))) return true;
+
+        // 3. Name match fallback
+        if (availableNames.some((avail: string) => avail.includes(req) || req.includes(avail))) return true;
+
+        return false;
+      });
 
       return allAvailable;
     });

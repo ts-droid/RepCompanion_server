@@ -60,11 +60,6 @@ export default function AdminDashboard() {
     equipmentKey: ""
   });
 
-  // Raw text states for multi-select inputs to avoid "eating" commas while typing
-  const [eqText, setEqText] = useState("");
-  const [pmText, setPmText] = useState("");
-  const [smText, setSmText] = useState("");
-
   const toggleId = (id: string) => {
     setSelectedIds(prev => 
       prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
@@ -107,10 +102,6 @@ export default function AdminDashboard() {
   });
 
   // Handle 401 errors
-  const { data: v4Catalog } = useQuery<any[]>({
-    queryKey: ["/api/admin/v4-catalog"],
-  });
-
   const anyError: any = statsError || unmappedError || exercisesError || equipmentError || gymsError;
   if (anyError && anyError.status === 401) {
     setLocation("/admin/login");
@@ -693,12 +684,7 @@ export default function AdminDashboard() {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-1">
-                              <Button variant="ghost" size="icon" onClick={() => {
-                                setEditingEx(ex);
-                                setEqText(ex.requiredEquipment?.join(", ") || "");
-                                setPmText(ex.primaryMuscles?.join(", ") || "");
-                                setSmText(ex.secondaryMuscles?.join(", ") || "");
-                              }} className="hover:bg-primary/10 hover:text-primary transition-colors">
+                              <Button variant="ghost" size="icon" onClick={() => setEditingEx(ex)} className="hover:bg-primary/10 hover:text-primary transition-colors">
                                 <Edit className="w-4 h-4" />
                               </Button>
                               <Button variant="ghost" size="icon" onClick={() => confirm("Ta bort övning?") && deleteMutation.mutate({ type: 'exercises', id: ex.id })} className="hover:bg-destructive/10 hover:text-destructive flex items-center h-8 w-8 transition-colors">
@@ -1049,28 +1035,15 @@ export default function AdminDashboard() {
                 <div className="flex flex-col items-center gap-2 pt-2 border-t mt-4">
                   <p className="text-xs text-muted-foreground">Hittar du inte övningen?</p>
                   <Button variant="outline" size="sm" onClick={() => {
-                    const aiName = mappingUnmapped?.aiName || "";
-                    const normAiName = aiName.toLowerCase().replace(/[^a-z0-9]/g, '');
-                    const matchedV4 = v4Catalog?.find(v => 
-                      v.name.toLowerCase().replace(/[^a-z0-9]/g, '') === normAiName ||
-                      v.id.toLowerCase().replace(/[^a-z0-9]/g, '') === normAiName
-                    );
-
-                    const eqList = matchedV4?.equipment ? [matchedV4.equipment] : [];
-                    const pmList = matchedV4?.primary_muscle_group ? [matchedV4.primary_muscle_group] : [];
-
                     setIsCreatingNew(true);
-                    setNewExData({
-                      nameEn: matchedV4?.name || aiName,
-                      category: matchedV4?.category || "strength",
-                      exerciseId: matchedV4?.id || suggestId(aiName),
-                      difficulty: matchedV4?.difficulty?.toLowerCase() || "beginner",
-                      primaryMuscles: pmList,
-                      requiredEquipment: eqList
+                     setNewExData({
+                      nameEn: mappingUnmapped?.aiName || "",
+                      category: "strength",
+                      exerciseId: suggestId(mappingUnmapped?.aiName || ""),
+                      difficulty: "beginner",
+                      primaryMuscles: [],
+                      requiredEquipment: []
                     });
-                    setEqText(eqList.join(", "));
-                    setPmText(pmList.join(", "));
-                    setSmText("");
                   }}>
                     <Plus className="w-4 h-4 mr-2" /> Skapa som ny övning
                   </Button>
@@ -1102,56 +1075,10 @@ export default function AdminDashboard() {
                     onChange={(e) => setNewExData(prev => ({ ...prev, category: e.target.value }))}
                   >
                     <option value="strength">Strength</option>
-                    <option value="isolation">Isolation</option>
-                    <option value="compound">Compound</option>
                     <option value="cardio">Cardio</option>
                     <option value="stretching">Stretching</option>
                     <option value="mobility">Mobility</option>
-                    <option value="recovery">Recovery</option>
-                    <option value="muscle_balance">Muscle Balance</option>
                   </select>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Svårighetsgrad</label>
-                    <select 
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      value={newExData.difficulty}
-                      onChange={(e) => setNewExData(prev => ({ ...prev, difficulty: e.target.value }))}
-                    >
-                      <option value="beginner">Beginner</option>
-                      <option value="intermediate">Intermediate</option>
-                      <option value="advanced">Advanced</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Primära Muskler (kommatecken)</label>
-                  <Input 
-                    value={pmText} 
-                    onChange={(e) => setPmText(e.target.value)}
-                    placeholder="t.ex. chest, triceps"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Sekundära Muskler (kommatecken)</label>
-                  <Input 
-                    value={smText} 
-                    onChange={(e) => setSmText(e.target.value)}
-                    placeholder="t.ex. shoulders"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Utrustning (kommatecken)</label>
-                  <Input 
-                    value={eqText} 
-                    onChange={(e) => setEqText(e.target.value)}
-                    placeholder="t.ex. dumbbell, bench"
-                  />
                 </div>
                 <Button variant="ghost" size="sm" className="w-full text-xs" onClick={() => setIsCreatingNew(false)}>
                   Tillbaka till matcha befintlig
@@ -1200,9 +1127,8 @@ export default function AdminDashboard() {
                     category: newExData.category,
                     exerciseId: newExData.exerciseId,
                     difficulty: newExData.difficulty,
-                    primaryMuscles: pmText.split(",").map(s => s.trim()).filter(Boolean),
-                    requiredEquipment: eqText.split(",").map(s => s.trim()).filter(Boolean),
-                    secondaryMuscles: smText.split(",").map(s => s.trim()).filter(Boolean)
+                    primaryMuscles: newExData.primaryMuscles,
+                    requiredEquipment: newExData.requiredEquipment
                   } as any);
                 }}
               >
@@ -1299,8 +1225,8 @@ export default function AdminDashboard() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">Utrustning (separera med kommatecken)</label>
                 <Input 
-                  value={eqText} 
-                  onChange={(e) => setEqText(e.target.value)}
+                  value={editingEx?.requiredEquipment?.join(", ") || ""} 
+                  onChange={(e) => setEditingEx(prev => prev ? { ...prev, requiredEquipment: e.target.value.split(",").map(s => s.trim()).filter(Boolean) } : null)}
                   placeholder="barbell, bench"
                 />
               </div>
@@ -1308,8 +1234,8 @@ export default function AdminDashboard() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">Primära Muskler (kommatecken)</label>
                 <Input 
-                  value={pmText} 
-                  onChange={(e) => setPmText(e.target.value)}
+                  value={editingEx?.primaryMuscles?.join(", ") || ""} 
+                  onChange={(e) => setEditingEx(prev => prev ? { ...prev, primaryMuscles: e.target.value.split(",").map(s => s.trim()).filter(Boolean) } : null)}
                   placeholder="chest, triceps"
                 />
               </div>
@@ -1317,8 +1243,8 @@ export default function AdminDashboard() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">Sekundära Muskler (kommatecken)</label>
                 <Input 
-                  value={smText} 
-                  onChange={(e) => setSmText(e.target.value)}
+                  value={editingEx?.secondaryMuscles?.join(", ") || ""} 
+                  onChange={(e) => setEditingEx(prev => prev ? { ...prev, secondaryMuscles: e.target.value.split(",").map(s => s.trim()).filter(Boolean) } : null)}
                   placeholder="shoulders"
                 />
               </div>
@@ -1344,9 +1270,9 @@ export default function AdminDashboard() {
                   nameEn: data.nameEn,
                   category: data.category,
                   difficulty: data.difficulty,
-                  primaryMuscles: pmText.split(",").map(s => s.trim()).filter(Boolean),
-                  secondaryMuscles: smText.split(",").map(s => s.trim()).filter(Boolean),
-                  requiredEquipment: eqText.split(",").map(s => s.trim()).filter(Boolean),
+                  primaryMuscles: data.primaryMuscles,
+                  secondaryMuscles: data.secondaryMuscles,
+                  requiredEquipment: data.requiredEquipment,
                   isCompound: data.isCompound,
                   youtubeUrl: data.youtubeUrl,
                   description: data.description,

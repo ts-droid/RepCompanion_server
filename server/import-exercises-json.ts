@@ -238,6 +238,15 @@ function getCategory(categories: string[]): string {
   return "strength";
 }
 
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, "") // Remove non-word chars (allow spaces/hyphens)
+    .replace(/\s+/g, "_")     // Replace spaces with underscores
+    .replace(/-+/g, "_")      // Replace hyphens with underscores
+    .replace(/^_+|_+$/g, ""); // Trim underscores
+}
+
 async function importExercises() {
   console.log("Starting exercise import...");
   console.log(`Total exercises to process: ${exerciseData.length}`);
@@ -277,11 +286,20 @@ async function importExercises() {
         /^[A-Za-z\s\-']+$/.test(term) && term !== ex.Name
       ) || null;
       
+      // Generate snake_case ID from English name if available, else Swedish name
+      const newExerciseId = slugify(englishName || ex.Name);
+
       if (existing) {
+        // Do NOT update exerciseId on existing records to avoid breaking history or bookmarks unless explicitly needed.
+        // But for this task, the user WANTS standardization.
+        // However, if we change ID here, we might conflict if multiple imports map to same slug.
+        // We generally should respect existing ID if valid.
+        // But let's partial update other fields.
+
         await db
           .update(exercises)
           .set({
-            exerciseId: String(ex["Exercise ID"]),
+            // exerciseId: String(ex["Exercise ID"]), // STOP resetting to numeric
             nameEn: existing.nameEn || englishName,
             requiredEquipment: mapEquipmentToArray(ex.Equipment),
             primaryMuscles: ex["Muscle group(s)"],
@@ -299,7 +317,7 @@ async function importExercises() {
         console.log(`Updated: ${ex.Name} (matched: ${existing.name})`);
       } else {
         await db.insert(exercises).values({
-          exerciseId: String(ex["Exercise ID"]),
+          exerciseId: newExerciseId, // Use slug
           name: ex.Name,
           nameEn: englishName,
           category: getCategory(ex.Categories),
@@ -316,7 +334,7 @@ async function importExercises() {
           aiSearchTerms: ex["AI-search terms"],
         });
         inserted++;
-        console.log(`Inserted: ${ex.Name}`);
+        console.log(`Inserted: ${ex.Name} as ${newExerciseId}`);
       }
     } catch (error: any) {
       if (error.message?.includes("duplicate key")) {

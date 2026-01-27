@@ -10,19 +10,19 @@ import { storage } from "./storage";
 // OpenAI client using Replit AI Integrations (no API key needed, billed to credits)
 const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY
+  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY || "missing"
 });
 
 // DeepSeek client (cheapest option)
 const deepseek = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_DEEPSEEK_BASE_URL || "https://api.deepseek.com/v1",
-  apiKey: process.env.AI_INTEGRATIONS_DEEPSEEK_API_KEY
+  apiKey: process.env.AI_INTEGRATIONS_DEEPSEEK_API_KEY || "missing"
 });
 
 // Gemini client (mid-tier pricing)
 const gemini = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta/openai",
-  apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY
+  apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY || "missing"
 });
 
 // Provider priority: DeepSeek (cheapest) → Gemini → OpenAI (most expensive)
@@ -227,11 +227,12 @@ const v4BlueprintSchema = z.object({
       type: z.enum(["warmup", "main", "accessory", "cardio", "cooldown", "endurance"]),
       exercises: z.array(z.object({
         exercise_id: z.string(),
+        exercise_name: z.string().optional(), // Hydrated by backend
         sets: z.number(),
         reps: z.string(),
         rest_seconds: z.number().nullable(),
         load_type: z.string(),
-        load_value: z.number(),
+        load_value: z.number().nullable(),
         priority: z.number().min(1).max(3),
         notes: z.string().nullable(),
       }))
@@ -885,8 +886,32 @@ export async function generateWorkoutBlueprintV4WithOpenAI(
   });
 
   blueprint.sessions = fitResults.sessions as any;
+
+  // Step D: Hydrate exercise names from catalog
+  const exerciseIds = new Set<string>();
+  blueprint.sessions.forEach(s =>
+    s.blocks.forEach(b =>
+      b.exercises.forEach(e => exerciseIds.add(e.exercise_id))
+    )
+  );
+
+  const catalogExercises = await storage.getExercisesByIds(Array.from(exerciseIds));
+  const catalogMap = new Map<string, any>();
+  catalogExercises.forEach(ex => {
+    if (ex.exerciseId) catalogMap.set(ex.exerciseId, ex);
+    if (ex.id) catalogMap.set(ex.id, ex);
+  });
+
+  blueprint.sessions.forEach(s => {
+    s.blocks.forEach(b => {
+      b.exercises.forEach(ex => {
+        const cat = catalogMap.get(ex.exercise_id);
+        (ex as any).exercise_name = cat?.nameEn || cat?.name || ex.exercise_id;
+      });
+    });
+  });
   
-  console.log("[V4] Blueprint generation complete");
+  console.log("[V4] Blueprint generation complete (hydrated)");
   return blueprint;
 }
 
@@ -1386,10 +1411,11 @@ export function convertV2ToDeepSeekFormat(
       available_equipment: availableEquipment,
     },
     program_overview: {
-      week_focus_summary: programV2.meta.notes || 
-        `V2-genererat program: ${programV2.sessions.length} pass/vecka, ` +
-        `${totalPlannedMinutes} min totalt, ` +
-        `${Math.round(avgSessionDuration)} min/pass`,
+      week_focus_summary: programV2.meta.notes 
+        ? `${programV2.meta.notes} (V2-genererat)`
+        : `V2-genererat program: ${programV2.sessions.length} pass/vecka, ` +
+          `${totalPlannedMinutes} min totalt, ` +
+          `${Math.round(avgSessionDuration)} min/pass`,
       expected_difficulty: profile.trainingLevel || 'Van',
       notes_on_progression: "Programmet är genererat med auto-1RM-estimering. " +
         "Följ programmets progression och öka vikterna gradvis baserat på RPE.",

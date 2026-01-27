@@ -448,6 +448,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async findNearbyGyms(lat: number, lng: number, radiusKm: number = 50): Promise<Array<Gym & { distance: number }>> {
+    // TODO: Implement premium/sponsored gym listing logic here.
+    // Sponsored gyms should appear at the top with a flag, logo, and optional banner.
+    
     // Haversine formula helper
     const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
       const R = 6371; // Earth radius in km
@@ -1462,7 +1465,7 @@ export class DatabaseStorage implements IStorage {
         
         const finalExerciseName = matchResult.exerciseName;
         
-        const exerciseKey = finalExerciseName.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+        const exerciseKey = matchResult.exerciseId || finalExerciseName.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
         
         // POST-VALIDATION: Fix AI errors where time-based values are used for reps-based exercises
         let validatedReps = exercise.reps || '8-12';

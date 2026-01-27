@@ -269,6 +269,73 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
     }
   });
 
+  app.post("/api/profile/suggest-goals", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const { motivationType, trainingLevel, specificSport, age, sex, bodyWeight, height } = req.body;
+      
+      console.log(`[Suggested Goals] 🎯 Generating goals for motivation: ${motivationType}, sport: ${specificSport || 'none'}`);
+
+      const openai = await import("openai");
+      const client = new openai.default({ apiKey: process.env.OPENAI_API_KEY });
+      
+      const prompt = `
+      You are an expert strength and conditioning coach.
+      Create a training profile for a user with these details:
+      - Motivation: ${motivationType}
+      - Sport: ${specificSport || "None"}
+      - Level: ${trainingLevel}
+      - Age: ${age || "Unknown"}, Sex: ${sex || "Unknown"}
+      
+      Return a JSON object STRICTLY in this format (no markdown code blocks):
+      {
+        "goalStrength": number (0-100),
+        "goalHypertrophy": number (0-100),
+        "goalEndurance": number (0-100),
+        "goalCardio": number (0-100),
+        "focusTags": ["string", "string"] (max 2 distinct short tags like "Power", "Agility", "Core"),
+        "selectedIntent": "string" (one short word e.g. "Explosive", "Endurance", "Strength")
+      }
+      
+      Constraint: The 4 goal values MUST sum to exactly 100.
+      Prioritize the specific demands of the sport "${specificSport}".
+      `;
+
+      const response = await client.chat.completions.create({
+        model: "gpt-4o",
+        messages: [{ role: "system", content: "You represent a JSON API. return only valid JSON." }, { role: "user", content: prompt }],
+        response_format: { type: "json_object" },
+        temperature: 0.7,
+      });
+
+      const content = response.choices[0].message.content;
+      if (!content) throw new Error("No content from AI");
+      
+      const result = JSON.parse(content);
+      
+      res.json({
+        goalStrength: result.goalStrength || 25,
+        goalVolume: result.goalHypertrophy || result.goalVolume || 25, // legacy key mapping
+        goalEndurance: result.goalEndurance || 25,
+        goalCardio: result.goalCardio || 25,
+        goalHypertrophy: result.goalHypertrophy || result.goalVolume || 25, // new key
+        focusTags: result.focusTags || [],
+        selectedIntent: result.selectedIntent
+      });
+
+    } catch (error) {
+      console.error("[Suggested Goals] ❌ Failed:", error);
+      res.json({
+        goalStrength: 25,
+        goalVolume: 25,
+        goalEndurance: 25,
+        goalCardio: 25,
+        goalHypertrophy: 25,
+        focusTags: [],
+        selectedIntent: null
+      });
+    }
+  });
+
   app.post("/api/profile", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
@@ -2466,22 +2533,6 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.get("/api/admin/v4-catalog", requireAdminAuth, async (req: any, res) => {
-    try {
-      const fs = await import("fs");
-      const path = await import("path");
-      const catalogPath = path.resolve(process.cwd(), "server/data/exercises.json");
-      if (fs.existsSync(catalogPath)) {
-        const catalog = JSON.parse(fs.readFileSync(catalogPath, "utf-8"));
-        res.json(catalog);
-      } else {
-        res.status(404).json({ message: "V4 catalog not found" });
-      }
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch V4 catalog" });
-    }
-  });
-
   app.get("/api/admin/exercises", requireAdminAuth, async (req: any, res) => {
     try {
       const data = await db.select().from(exercises).orderBy(exercises.nameEn);
@@ -2567,10 +2618,25 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
 
   app.put("/api/admin/equipment/:id([0-9a-fA-F-]{36})", requireAdminAuth, async (req: any, res) => {
     try {
-      const updated = await storage.adminUpdateEquipment(req.params.id, req.body);
+      const { name, nameEn, equipmentKey, category, type, description } = req.body;
+      // Sanitize payload to remove id, createdAt, aliases, etc.
+      const cleanData: any = { 
+        name, 
+        nameEn, 
+        equipmentKey, 
+        category, 
+        type: type || 'gym_equipment', // Fallback if missing
+        description 
+      };
+      
+      // Remove undefined keys
+      Object.keys(cleanData).forEach(key => cleanData[key] === undefined && delete cleanData[key]);
+
+      const updated = await storage.adminUpdateEquipment(req.params.id, cleanData);
       res.json(updated);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update equipment" });
+    } catch (error: any) {
+      console.error("[ADMIN API] Failed to update equipment:", error);
+      res.status(500).json({ message: error.message || "Failed to update equipment" });
     }
   });
 
