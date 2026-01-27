@@ -566,9 +566,13 @@ async function hydrateV4Blueprint(
           tempo: "3-0-1-0", // Default tempo
           suggested_weight_kg: null,
           suggested_weight_notes: null,
-          target_muscles: cat?.primaryMuscles || [],
-          required_equipment: cat?.requiredEquipment || [],
+          target_muscles: cat?.primaryMuscles || ex.primary_muscles || [],
+          required_equipment: cat?.requiredEquipment || ex.required_equipment || [],
           technique_cues: cat?.description ? [cat.description] : [],
+          category: ex.category,
+          primary_muscles: ex.primary_muscles,
+          secondary_muscles: ex.secondary_muscles,
+          difficulty: ex.difficulty,
         };
 
         if (block.type === "warmup") {
@@ -1385,6 +1389,10 @@ export function convertV2ToDeepSeekFormat(
           target_muscles: [], // V2 doesn't provide this
           required_equipment: equipmentArray.length > 0 ? equipmentArray : ["Bodyweight"],
           technique_cues: [], // V2 doesn't provide detailed cues
+          category: exercise.category,
+          primary_muscles: exercise.primaryMuscles,
+          secondary_muscles: exercise.secondaryMuscles,
+          difficulty: exercise.difficulty,
         };
       }),
       cooldown: [
