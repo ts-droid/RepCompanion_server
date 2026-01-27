@@ -2699,7 +2699,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.put("/api/admin/gyms/:id([0-9a-fA-F-]{36})", requireAdminAuth, async (req: any, res) => {
+  app.put("/api/admin/gyms/:id", requireAdminAuth, async (req: any, res) => {
     try {
       const { equipmentKeys, ...gymData } = req.body;
       const updated = await storage.adminUpdateGym(req.params.id, gymData, equipmentKeys);
@@ -2709,7 +2709,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.delete("/api/admin/exercises/:id([0-9a-fA-F-]{36})", requireAdminAuth, async (req: any, res) => {
+  app.delete("/api/admin/exercises/:id", requireAdminAuth, async (req: any, res) => {
     try {
       await storage.adminDeleteExercise(req.params.id);
       res.json({ success: true });
@@ -2718,7 +2718,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.delete("/api/admin/unmapped-exercises/:id([0-9a-fA-F-]{36})", requireAdminAuth, async (req: any, res) => {
+  app.delete("/api/admin/unmapped-exercises/:id", requireAdminAuth, async (req: any, res) => {
     try {
       await storage.adminDeleteUnmappedExercise(req.params.id);
       res.json({ success: true });
@@ -2727,7 +2727,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.delete("/api/admin/equipment/:id([0-9a-fA-F-]{36})", requireAdminAuth, async (req: any, res) => {
+  app.delete("/api/admin/equipment/:id", requireAdminAuth, async (req: any, res) => {
     try {
       await storage.adminDeleteEquipmentCatalog(req.params.id);
       res.json({ success: true });
@@ -2736,7 +2736,7 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
     }
   });
 
-  app.delete("/api/admin/gyms/:id([0-9a-fA-F-]{36})", requireAdminAuth, async (req: any, res) => {
+  app.delete("/api/admin/gyms/:id", requireAdminAuth, async (req: any, res) => {
     try {
       await storage.adminDeleteGym(req.params.id);
       res.json({ success: true });
