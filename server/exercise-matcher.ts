@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { exercises, unmappedExercises, exerciseAliases as exerciseAliasesTable, userProfiles, userEquipment, UserEquipment } from "@shared/schema";
+import { exercises, unmappedExercises, exerciseAliases as exerciseAliasesTable, userProfiles, userEquipment, UserEquipment, gyms } from "@shared/schema";
 import { eq, sql, or, and } from "drizzle-orm";
 
 /**
@@ -468,7 +468,7 @@ export async function filterExercisesByUserEquipment(
     let userEq: UserEquipment[];
     
     if (targetGymId) {
-      // Get equipment for specific gym
+      // Get equipment for specific gym (owned by user)
       userEq = await db
         .select()
         .from(userEquipment)
@@ -478,7 +478,20 @@ export async function filterExercisesByUserEquipment(
             eq(userEquipment.gymId, targetGymId)
           )
         );
-      console.log(`[EXERCISE FILTER] Filtering for gym ${targetGymId}`);
+      
+      // FALLBACK: If user has no personal equipment records for this gym, 
+      // check if it's a public/verified gym and use its registered equipment.
+      if (userEq.length === 0) {
+        const [gym] = await db.select().from(gyms).where(eq(gyms.id, targetGymId));
+        if (gym && (gym.isPublic || gym.isVerified)) {
+          console.log(`[EXERCISE FILTER] User has no records for gym ${targetGymId}. Using public equipment.`);
+          userEq = await db
+            .select()
+            .from(userEquipment)
+            .where(eq(userEquipment.gymId, targetGymId));
+        }
+      }
+      console.log(`[EXERCISE FILTER] Filtering for gym ${targetGymId} with ${userEq.length} equipment items`);
     } else {
       // Fallback: Get all equipment for user across all gyms
       userEq = await db

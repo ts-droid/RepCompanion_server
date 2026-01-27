@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { userProfiles, userEquipment, equipmentCatalog, programTemplates } from "@shared/schema";
-import { eq, desc } from "drizzle-orm";
+import { userProfiles, userEquipment, equipmentCatalog, programTemplates, gyms } from "@shared/schema";
+import { eq, desc, and } from "drizzle-orm";
 import { filterExercisesByUserEquipment } from "./exercise-matcher";
 
 /**
@@ -58,12 +58,27 @@ export class WorkoutGenerationService {
     }
 
     // Fetch user's equipment
-    const userEquipmentList = await db
+    let userEquipmentList = await db
       .select({
         name: userEquipment.equipmentName,
       })
       .from(userEquipment)
       .where(eq(userEquipment.userId, userId));
+
+    // FALLBACK: If user has no personal equipment records, 
+    // and they have a selected gym, use the gym's master equipment list if public/verified
+    if (userEquipmentList.length === 0 && profile.selectedGymId) {
+      const [gym] = await db.select().from(gyms).where(eq(gyms.id, profile.selectedGymId));
+      if (gym && (gym.isPublic || gym.isVerified)) {
+        console.log(`[WORKOUT MAPPING] User ${userId} has no personal equipment. Falling back to gym ${profile.selectedGymId} public equipment.`);
+        userEquipmentList = await db
+          .select({
+            name: userEquipment.equipmentName,
+          })
+          .from(userEquipment)
+          .where(eq(userEquipment.gymId, profile.selectedGymId));
+      }
+    }
 
     // Get unique equipment names
     const availableEquipment = Array.from(new Set(userEquipmentList.map(e => e.name)));

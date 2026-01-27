@@ -513,12 +513,13 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
   app.post("/api/onboarding/complete", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const { profile, equipment } = req.body;
+      const { profile, equipment, selectedGymId } = req.body;
 
       // DEBUG: Log received data
       console.log("[Onboarding] 📥 Received request from user:", userId);
       console.log("[Onboarding] 📋 Profile data:", JSON.stringify(profile, null, 2));
       console.log("[Onboarding] 🏋️ Equipment:", equipment);
+      console.log("[Onboarding] 🏢 Selected Gym ID:", selectedGymId);
 
       if (!profile?.motivationType || !profile?.trainingLevel || !profile?.sessionsPerWeek || !profile?.sessionDuration) {
         console.log("[Onboarding] ❌ Validation failed - missing required fields:");
@@ -574,12 +575,15 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
 
       await storage.upsertUserProfile(preliminaryProfile);
 
+      let gymIdToUse = selectedGymId || null;
       let firstGym: any = null;
-      if (equipmentRegistered) {
+
+      if (!gymIdToUse && equipmentRegistered) {
         firstGym = await storage.createGym({
           userId,
           name: "Mitt Gym",
         });
+        gymIdToUse = firstGym.id;
 
         const uniqueEquipment = Array.from(new Set(equipment));
         const equipmentPromises = uniqueEquipment.map((equipmentName: string) =>
@@ -592,13 +596,16 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
           })
         );
         await Promise.all(equipmentPromises);
+      } else if (gymIdToUse) {
+        // Fetch existing gym details if needed for logging/response
+        firstGym = await storage.getGym(gymIdToUse);
       }
 
       const finalProfile = await storage.upsertUserProfile({
         ...preliminaryProfile,
         onboardingCompleted: true,
-        equipmentRegistered,
-        selectedGymId: firstGym?.id || null,
+        equipmentRegistered: equipmentRegistered || !!selectedGymId,
+        selectedGymId: gymIdToUse,
       });
 
       let hasProgram = false;
