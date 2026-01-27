@@ -246,7 +246,7 @@ export default function AdminDashboard() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async ({ type, id }: { type: 'exercises' | 'equipment' | 'gyms' | 'unmapped-exercises'; id: string }) => {
+    mutationFn: async ({ type, id }: { type: 'exercises' | 'equipment' | 'gyms' | 'unmapped-exercises' | 'users'; id: string }) => {
       const res = await apiRequest("DELETE", `/api/admin/${type}/${id}`, undefined);
       return res.json();
     },
@@ -257,6 +257,7 @@ export default function AdminDashboard() {
           variables.type === 'exercises' ? 'Övning' : 
           variables.type === 'equipment' ? 'Utrustning' : 
           variables.type === 'gyms' ? 'Gym' : 
+          variables.type === 'users' ? 'Användare' :
           'Omatchad övning'
         } borttagen` 
       });
@@ -1058,6 +1059,106 @@ export default function AdminDashboard() {
                 </Table>
               </CardContent>
             </Card>
+          </TabsContent>
+          
+          <TabsContent value="users" className="animate-admin-fade delay-1">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-bold">Användare</h2>
+                  <Badge variant="secondary">{adminUsers?.length || 0}</Badge>
+                </div>
+                {selectedIds.length > 0 && (
+                  <Button 
+                    variant="destructive" 
+                    size="sm"
+                    onClick={() => {
+                      if (confirm(`Är du säker på att du vill ta bort ${selectedIds.length} användare? Detta går inte att ångra.`)) {
+                        bulkDeleteMutation.mutate({ type: 'users', ids: selectedIds });
+                      }
+                    }}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Ta bort markerade ({selectedIds.length})
+                  </Button>
+                )}
+              </div>
+
+              <Card className="admin-card overflow-hidden">
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader className="bg-muted/20">
+                      <TableRow>
+                        <TableHead className="w-12">
+                          <Checkbox 
+                            checked={adminUsers && adminUsers.length > 0 && adminUsers.every(u => selectedIds.includes(u.id))}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                const allIds = adminUsers?.map(u => u.id) || [];
+                                setSelectedIds(prev => Array.from(new Set([...prev, ...allIds])));
+                              } else {
+                                const allIds = adminUsers?.map(u => u.id) || [];
+                                setSelectedIds(prev => prev.filter(id => !allIds.includes(id)));
+                              }
+                            }}
+                          />
+                        </TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Namn</TableHead>
+                        <TableHead>Skapad</TableHead>
+                        <TableHead>Senast inloggad</TableHead>
+                        <TableHead className="text-right">Åtgärder</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {adminUsers?.map((user: any) => (
+                        <TableRow key={user.id} className="admin-table-row">
+                          <TableCell>
+                            <Checkbox 
+                              checked={selectedIds.includes(user.id)}
+                              onCheckedChange={() => toggleId(user.id)}
+                            />
+                          </TableCell>
+                          <TableCell className="font-medium">{user.email || user.username}</TableCell>
+                          <TableCell>{user.displayName || user.profile?.displayName || "-"}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : "-"}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                             {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : "-"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button variant="ghost" size="icon" onClick={() => setEditingUser(user)} className="hover:bg-primary/10 hover:text-primary transition-colors">
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button variant="ghost" size="icon" onClick={() => confirm("Ta bort användare? Detta går inte att ångra.") && deleteMutation.mutate({ type: 'users', id: user.id })} className="hover:bg-destructive/10 hover:text-destructive h-8 w-8 flex items-center transition-colors">
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {!adminUsers && !isUsersError && (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center py-20">
+                            <RefreshCw className="w-8 h-8 text-primary animate-spin mx-auto mb-2" />
+                            <p className="text-muted-foreground">Hämtar användare...</p>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {adminUsers?.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center py-12">
+                            <p className="text-muted-foreground">Inga användare hittades.</p>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </div>
