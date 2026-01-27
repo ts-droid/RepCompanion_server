@@ -1911,6 +1911,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async adminUpdateGym(id: string, data: Partial<import("@shared/schema").Gym>, equipmentKeys?: string[]): Promise<import("@shared/schema").Gym> {
+    console.log(`[STORAGE] adminUpdateGym called for id: ${id}`, { dataKeys: Object.keys(data), hasEquipmentKeys: !!equipmentKeys });
+    
     // Auto-geocode if location is provided but coordinates are missing
     if (data.location && !data.latitude && !data.longitude) {
       console.log(`[STORAGE] Geocoding gym location: ${data.location}`);
@@ -1918,8 +1920,8 @@ export class DatabaseStorage implements IStorage {
         const coords = await this.geocodeAddress(data.location);
         if (coords) {
           console.log(`[STORAGE] Geocode success: ${coords.lat}, ${coords.lng}`);
-          data.latitude = coords.lat;
-          data.longitude = coords.lng;
+          data.latitude = String(coords.lat);
+          data.longitude = String(coords.lng);
         } else {
           console.warn(`[STORAGE] Geocode failed for: ${data.location}`);
         }
@@ -1928,33 +1930,52 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
-    const [updated] = await db.update(gyms).set(data).where(eq(gyms.id, id)).returning();
-    
-    if (equipmentKeys && updated) {
-      // Sync equipment
-      // 1. Delete existing equipment for this gym
-      await db.delete(userEquipment).where(eq(userEquipment.gymId, id));
+    let result;
+    try {
+      // Create a clean object with only upgradable fields to avoid schema issues
+      const updateData: any = {};
+      if (data.name !== undefined) updateData.name = data.name;
+      if (data.location !== undefined) updateData.location = data.location;
+      if (data.latitude !== undefined) updateData.latitude = String(data.latitude);
+      if (data.longitude !== undefined) updateData.longitude = String(data.longitude);
+      if (data.isPublic !== undefined) updateData.isPublic = data.isPublic;
+      if (data.isVerified !== undefined) updateData.isVerified = data.isVerified;
       
-      // 2. Fetch catalog info for the keys to populate name/type
-      if (equipmentKeys.length > 0) {
-        const catalogItems = await db.select().from(equipmentCatalog).where(inArray(equipmentCatalog.equipmentKey, equipmentKeys));
+      console.log(`[STORAGE] Performing DB update on gyms`, updateData);
+      const [updated] = await db.update(gyms).set(updateData).where(eq(gyms.id, id)).returning();
+      result = updated;
+    } catch (error) {
+      console.error(`[STORAGE] adminUpdateGym DB Error:`, error);
+      throw error;
+    }
+
+    if (equipmentKeys && result) {
+      try {
+        await db.delete(userEquipment).where(eq(userEquipment.gymId, id));
         
-        const newEquipment = catalogItems.map(item => ({
-          userId: updated.userId,
-          gymId: updated.id,
-          equipmentType: item.category,
-          equipmentName: item.name,
-          equipmentKey: item.equipmentKey,
-          available: true
-        }));
-        
-        if (newEquipment.length > 0) {
-          await db.insert(userEquipment).values(newEquipment);
+        if (equipmentKeys.length > 0) {
+          const catalogItems = await db.select().from(equipmentCatalog).where(inArray(equipmentCatalog.equipmentKey, equipmentKeys));
+          
+          const newEquipment = catalogItems.map(item => ({
+            userId: result!.userId,
+            gymId: result!.id,
+            equipmentType: item.category,
+            equipmentName: item.name,
+            equipmentKey: item.equipmentKey,
+            available: true
+          }));
+          
+          if (newEquipment.length > 0) {
+            await db.insert(userEquipment).values(newEquipment);
+          }
         }
+      } catch (eqError) {
+        console.error(`[STORAGE] adminUpdateGym Equipment Sync Error:`, eqError);
       }
     }
     
-    return updated;
+    if (!result) throw new Error("Gym not found or update failed");
+    return result;
   }
 
   async adminGetGymEquipment(gymId: string): Promise<{name: string, key: string | null}[]> {
