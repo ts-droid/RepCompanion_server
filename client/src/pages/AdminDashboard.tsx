@@ -917,6 +917,7 @@ export default function AdminDashboard() {
                       </TableHead>
                       <TableHead>Namn</TableHead>
                       <TableHead>Plats / Adress</TableHead>
+                      <TableHead>Status</TableHead>
                       <TableHead>Utrustning</TableHead>
                       <TableHead>Användare</TableHead>
                       <TableHead className="text-right">Åtgärder</TableHead>
@@ -932,13 +933,32 @@ export default function AdminDashboard() {
                           />
                         </TableCell>
                         <TableCell className="font-semibold">{gym.name}</TableCell>
-                        <TableCell className="text-xs">{gym.location || "Ej angivet"}</TableCell>
+                        <TableCell className="text-xs max-w-[200px] truncate">{gym.location || "Ej angivet"}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {gym.isPublic && (
+                              <Badge variant="outline" className="text-[10px] border-emerald-500/50 text-emerald-600 bg-emerald-50/50">
+                                Publik
+                              </Badge>
+                            )}
+                            {gym.isVerified && (
+                              <Badge variant="outline" className="text-[10px] border-blue-500/50 text-blue-600 bg-blue-50/50">
+                                <Check className="w-3 h-3 mr-0.5" /> Verifierad
+                              </Badge>
+                            )}
+                            {!gym.isPublic && !gym.isVerified && (
+                              <Badge variant="outline" className="text-[10px] text-muted-foreground opacity-50">
+                                Privat
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <Badge variant="secondary" className="font-mono text-[10px]">
                             {gym.equipmentCount || 0} st
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{gym.userEmail || "Ingen ägare"}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground truncate max-w-[150px]">{gym.userEmail || "Ingen ägare"}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
                             <Button variant="ghost" size="icon" onClick={() => setEditingGym(gym)} className="hover:bg-primary/10 hover:text-primary transition-colors">
@@ -1566,6 +1586,46 @@ export default function AdminDashboard() {
                   value={editingGym?.location || ""} 
                   onChange={(e) => setEditingGym(prev => prev ? { ...prev, location: e.target.value } : null)} 
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 py-2 border-y bg-muted/10 px-3">
+                <div className="flex items-center gap-2">
+                  <Checkbox 
+                    id="isPublicGym" 
+                    checked={editingGym?.isPublic || false}
+                    onCheckedChange={(checked) => setEditingGym(prev => prev ? { ...prev, isPublic: !!checked } : null)}
+                  />
+                  <label htmlFor="isPublicGym" className="text-xs font-semibold cursor-pointer">Publikt gym</label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox 
+                    id="isVerifiedGym" 
+                    checked={editingGym?.isVerified || false}
+                    onCheckedChange={(checked) => setEditingGym(prev => prev ? { ...prev, isVerified: !!checked } : null)}
+                  />
+                  <label htmlFor="isVerifiedGym" className="text-xs font-semibold cursor-pointer">Verifierad status</label>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Latitude</label>
+                  <Input 
+                    className="h-8 text-xs font-mono"
+                    value={editingGym?.latitude || ""} 
+                    onChange={(e) => setEditingGym(prev => prev ? { ...prev, latitude: e.target.value } : null)}
+                    placeholder="T.ex. 59.3293"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Longitude</label>
+                  <Input 
+                    className="h-8 text-xs font-mono"
+                    value={editingGym?.longitude || ""} 
+                    onChange={(e) => setEditingGym(prev => prev ? { ...prev, longitude: e.target.value } : null)}
+                    placeholder="T.ex. 18.0686"
+                  />
+                </div>
               </div>
             </div>
 

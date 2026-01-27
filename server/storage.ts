@@ -1,3 +1,4 @@
+import https from "https";
 import { 
   type User, 
   type UpsertUser,
@@ -163,6 +164,7 @@ export interface IStorage {
   adminDeleteGym(id: string): Promise<void>;
   adminMergeExercises(sourceId: string, targetId: string): Promise<void>;
   
+
   // V4 specific operations
   getUserTimeModel(userId: string): Promise<import("@shared/schema").UserTimeModel | undefined>;
   getExercisesByIds(ids: string[]): Promise<any[]>;
@@ -170,8 +172,44 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  private async geocodeAddress(address: string): Promise<{ lat: string; lng: string } | null> {
+    return new Promise((resolve) => {
+      const options = {
+        hostname: 'nominatim.openstreetmap.org',
+        path: `/search?q=${encodeURIComponent(address)}&format=json&limit=1`,
+        headers: {
+          'User-Agent': 'RepCompanion-Backend/1.0'
+        }
+      };
+
+      https.get(options, (res: any) => {
+        let data = '';
+        res.on('data', (chunk: string | Buffer) => { data += chunk; });
+        res.on('end', () => {
+          try {
+            const results = JSON.parse(data);
+            if (results && results.length > 0) {
+              resolve({
+                lat: results[0].lat,
+                lng: results[0].lon
+              });
+            } else {
+              resolve(null);
+            }
+          } catch (e) {
+            console.error("[GEOCODE] Parse error:", e);
+            resolve(null);
+          }
+        });
+      }).on('error', (err: Error) => {
+        console.error("[GEOCODE] Network error:", err);
+        resolve(null);
+      });
+    });
+  }
+
   // ========== User operations ==========
-  
+
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
@@ -470,7 +508,7 @@ export class DatabaseStorage implements IStorage {
     const publicGyms = await db
       .select()
       .from(gyms)
-      .where(eq(gyms.isPublic, true));
+      .where(and(eq(gyms.isPublic, true), eq(gyms.isVerified, true)));
 
     const gymsWithDistance = publicGyms
       .map(gym => {
@@ -1820,6 +1858,23 @@ export class DatabaseStorage implements IStorage {
   }
 
   async adminUpdateGym(id: string, data: Partial<import("@shared/schema").Gym>, equipmentKeys?: string[]): Promise<import("@shared/schema").Gym> {
+    // Auto-geocode if location is provided but coordinates are missing
+    if (data.location && !data.latitude && !data.longitude) {
+      console.log(`[STORAGE] Geocoding gym location: ${data.location}`);
+      try {
+        const coords = await this.geocodeAddress(data.location);
+        if (coords) {
+          console.log(`[STORAGE] Geocode success: ${coords.lat}, ${coords.lng}`);
+          data.latitude = coords.lat;
+          data.longitude = coords.lng;
+        } else {
+          console.warn(`[STORAGE] Geocode failed for: ${data.location}`);
+        }
+      } catch (error) {
+        console.error(`[STORAGE] Geocode error:`, error);
+      }
+    }
+
     const [updated] = await db.update(gyms).set(data).where(eq(gyms.id, id)).returning();
     
     if (equipmentKeys && updated) {

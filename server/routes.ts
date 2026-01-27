@@ -2669,6 +2669,8 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
           location: gyms.location,
           latitude: gyms.latitude,
           longitude: gyms.longitude,
+          isPublic: gyms.isPublic,
+          isVerified: gyms.isVerified,
           userId: gyms.userId,
           userEmail: users.email,
           createdAt: gyms.createdAt,

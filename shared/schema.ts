@@ -126,6 +126,7 @@ export const gyms = pgTable("gyms", {
   latitude: text("latitude"), // Store as string for precision/simplicity in serialization
   longitude: text("longitude"),
   isPublic: boolean("is_public").default(false).notNull(),
+  isVerified: boolean("is_verified").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -528,6 +529,7 @@ export const updateGymSchema = z.object({
   latitude: z.string().optional().nullable(),
   longitude: z.string().optional().nullable(),
   isPublic: z.boolean().optional(),
+  isVerified: z.boolean().optional(),
 });
 
 export const insertEquipmentSchema = createInsertSchema(userEquipment).omit({
