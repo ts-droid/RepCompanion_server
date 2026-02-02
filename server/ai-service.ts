@@ -5,6 +5,7 @@ import OpenAI from "openai";
 import * as V4Prompts from "./prompts/v4";
 import { estimateSessionSeconds, fitProgramSessions } from "./utils/timeFitting";
 import { storage } from "./storage";
+import { JobManager } from "./generation-jobs";
 
 // OpenAI client
 const openai = new OpenAI({
@@ -370,9 +371,10 @@ async function executeWithFallback(
       });
       
       const response = await Promise.race([apiPromise, timeoutPromise]) as any;
-      const content = response.choices[0].message.content || "{}";
+      const content = (response.choices[0].message.content || "{}").trim();
       
-      console.log(`[${logPrefix}] ✅ Success with ${config.provider}`);
+      const preview = content.length > 100 ? content.substring(0, 100) + "..." : content;
+      console.log(`[${logPrefix}] ✅ Success with ${config.provider}. Content: ${preview}`);
       return { content, provider: config.provider };
       
     } catch (error: any) {
@@ -386,13 +388,52 @@ async function executeWithFallback(
 }
 
 /**
+ * Helper to clean AI response and parse JSON safely
+ */
+function safeParseJSON(content: string, logPrefix: string): any {
+  let cleaned = content.trim();
+  
+  // 1. Remove markdown code blocks
+  if (cleaned.includes("```")) {
+    const matches = cleaned.match(/```(?:json)?([\s\S]*?)```/);
+    if (matches && matches[1]) {
+      cleaned = matches[1].trim();
+    } else {
+      cleaned = cleaned.replace(/```(?:json)?/g, "").replace(/```/g, "").trim();
+    }
+  }
+
+  // 2. Try parsing directly
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    // 3. Last ditch effort: find first { and last }
+    console.warn(`[${logPrefix}] ⚠️ Direct parse failed, attempting block extraction...`);
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    if (start !== -1 && end !== -1 && end > start) {
+      try {
+        const extracted = cleaned.substring(start, end + 1);
+        return JSON.parse(extracted);
+      } catch (innerError) {
+        console.error(`[${logPrefix}] ❌ Extraction failed. Raw content:`, content);
+        throw innerError;
+      }
+    }
+    console.error(`[${logPrefix}] ❌ No JSON object found. Raw content:`, content);
+    throw e;
+  }
+}
+
+/**
  * Main V4 generation flow
  */
 // Helper to translate session focus names
 
 export async function generateWorkoutProgramV4WithOpenAI(
   profileData: any,
-  targetDuration: number
+  targetDuration: number,
+  jobId?: string
 ): Promise<DeepSeekWorkoutProgram> {
   console.log(`[V4] Starting V4 generation flow`);
   console.log(`[V4] Priority: ${PROVIDER_PRIORITY.join(" → ")}`);
@@ -417,9 +458,11 @@ export async function generateWorkoutProgramV4WithOpenAI(
     "V4 Analysis"
   );
 
-  const analysis = v4AnalysisSchema.parse(JSON.parse(analysisResult.content));
+  const analysis = v4AnalysisSchema.parse(safeParseJSON(analysisResult.content, "V4 Analysis"));
   console.log(`[V4] Analysis complete: ${analysis.analysis_summary}`);
   
+  if (jobId) JobManager.updateJob(jobId, { progress: 30 });
+
   // Step B: Blueprint
   const timeModel = await storage.getUserTimeModel(profileData.userId) || {
     workSecondsPer10Reps: 30,
@@ -459,8 +502,10 @@ export async function generateWorkoutProgramV4WithOpenAI(
     "V4 Blueprint"
   );
 
-  const blueprint = v4BlueprintSchema.parse(JSON.parse(blueprintResult.content));
+  const blueprint = v4BlueprintSchema.parse(safeParseJSON(blueprintResult.content, "V4 Blueprint"));
   console.log(`[V4] Blueprint created: ${blueprint.program_name}`);
+
+  if (jobId) JobManager.updateJob(jobId, { progress: 60 });
 
   // Step C: Hydration & Fitting
   const fitResults = fitProgramSessions({
@@ -475,6 +520,8 @@ export async function generateWorkoutProgramV4WithOpenAI(
   const hydrated = await hydrateV4Blueprint(blueprint, profileData, timeModel);
   console.log(`[V4] Hydration and fitting complete`);
   
+  if (jobId) JobManager.updateJob(jobId, { progress: 100, status: 'completed' });
+
   return hydrated;
 }
 
@@ -507,7 +554,7 @@ export async function generateWorkoutBlueprintV4WithOpenAI(
     "V4 Analysis"
   );
 
-  const analysis = v4AnalysisSchema.parse(JSON.parse(analysisResult.content));
+  const analysis = v4AnalysisSchema.parse(safeParseJSON(analysisResult.content, "V4 Analysis"));
   
   // Step B: Blueprint
   const timeModel = await storage.getUserTimeModel(profileData.userId) || {
@@ -548,7 +595,7 @@ export async function generateWorkoutBlueprintV4WithOpenAI(
     "V4 Blueprint"
   );
 
-  const blueprint = v4BlueprintSchema.parse(JSON.parse(blueprintResult.content));
+  const blueprint = v4BlueprintSchema.parse(safeParseJSON(blueprintResult.content, "V4 Blueprint"));
   
   // Fit sessions
   const fitResults = fitProgramSessions({
@@ -591,7 +638,8 @@ export async function generateWorkoutProgramWithVersionSwitch(
   arg1: any, 
   arg2?: any,
   arg3?: any,
-  arg4?: any
+  arg4?: any,
+  jobId?: string
 ): Promise<AIWorkoutProgram> {
   let profileData: any;
   let targetDuration: number = 60;
@@ -609,7 +657,7 @@ export async function generateWorkoutProgramWithVersionSwitch(
     }
   }
 
-  return await generateWorkoutProgramV4WithOpenAI(profileData, targetDuration);
+  return await generateWorkoutProgramV4WithOpenAI(profileData, targetDuration, jobId);
 }
 
 // Aliases for backward compatibility

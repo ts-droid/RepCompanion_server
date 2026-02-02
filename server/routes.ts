@@ -17,6 +17,7 @@ import { insertUserProfileSchema, updateUserProfileSchema, insertGymSchema, upda
 import { z, ZodError } from "zod";
 import { generateWorkoutProgram, generateWorkoutProgramWithReasoner, generateWorkoutProgramWithVersionSwitch, generateWorkoutBlueprintV4WithOpenAI } from "./ai-service";
 import { recognizeEquipmentFromImage } from "./roboflow-service";
+import { JobManager } from "./generation-jobs";
 import { promoService } from "./promo-service";
 import { workoutGenerationService } from "./workout-generation-service";
 import { adjustProgramDuration, analyzeMuscleGroupBalance } from "./program-adjustment-service";
@@ -435,7 +436,7 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
               extendedProfile || undefined
             );
             await storage.clearUserProgramTemplates(userId);
-            await storage.createProgramTemplatesFromDeepSeek(userId, program);
+            await storage.createProgramTemplatesFromAI(userId, program);
             await storage.incrementProgramGeneration(userId);
             // Reset pass counter to 1 for new program cycle
             await storage.updateUserProfile(userId, { currentPassNumber: 1 });
@@ -580,10 +581,10 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
 
       if (!gymIdToUse && equipmentRegistered) {
         // Check if "Mitt Gym" already exists to avoid duplicates
-        const existingMittGym = await db.select().from(storage.schema.gyms)
+        const existingMittGym = await db.select().from(gyms)
           .where(and(
-            eq(storage.schema.gyms.userId, userId),
-            eq(storage.schema.gyms.name, "Mitt Gym")
+            eq(gyms.userId, userId),
+            eq(gyms.name, "Mitt Gym")
           ))
           .limit(1);
 
@@ -620,52 +621,51 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
         selectedGymId: gymIdToUse,
       });
 
-      let hasProgram = false;
-      let templatesCreated = 0;
+      // Create a background job for program generation
+      const job = JobManager.createJob(userId);
 
-      // Generate workout program automatically after onboarding
-      try {
-        
-        const workoutData = await workoutGenerationService.getUserWorkoutData(userId);
-        if (workoutData) {
-          const systemPrompt = workoutGenerationService.getSystemPrompt();
-          const userPrompt = workoutGenerationService.buildUserPrompt(workoutData);
-          
-          // Get extended profile data for V2 generation
-          const extendedProfile = await workoutGenerationService.getExtendedProfileData(userId);
-          
-          const program = await generateWorkoutProgramWithVersionSwitch(
-            systemPrompt, 
-            userPrompt, 
-            workoutData.session_length_minutes,
-            extendedProfile || undefined
-          );
-          
-          // Clear any existing templates AFTER successful generation (prevents data loss if AI fails)
-          await storage.clearUserProgramTemplates(userId);
-          
-          await storage.createProgramTemplatesFromDeepSeek(userId, program);
-          
-          // Verify templates were created
-          const templates = await storage.getUserProgramTemplates(userId);
-          templatesCreated = templates.length;
-          hasProgram = templatesCreated > 0;
-
-          // Reset pass counter to 1 for new program cycle
-          await storage.updateUserProfile(userId, { currentPassNumber: 1 });
-          
+      // Trigger generation in background
+      (async () => {
+        try {
+          const workoutData = await workoutGenerationService.getUserWorkoutData(userId);
+          if (workoutData) {
+            const systemPrompt = workoutGenerationService.getSystemPrompt();
+            const userPrompt = workoutGenerationService.buildUserPrompt(workoutData);
+            
+            // Get extended profile data for V2 generation
+            const extendedProfile = await workoutGenerationService.getExtendedProfileData(userId);
+            
+            const program = await generateWorkoutProgramWithVersionSwitch(
+              systemPrompt, 
+              userPrompt, 
+              workoutData.session_length_minutes,
+              extendedProfile || undefined,
+              job.id
+            );
+            
+            await storage.clearUserProgramTemplates(userId);
+            await storage.createProgramTemplatesFromAI(userId, program);
+            await storage.updateUserProfile(userId, { currentPassNumber: 1 });
+            
+            JobManager.updateJob(job.id, { status: 'completed', progress: 100 });
+          }
+        } catch (programError) {
+          console.error("[Onboarding] ❌ Background generation failed:", programError);
+          JobManager.updateJob(job.id, { 
+            status: 'failed', 
+            error: programError instanceof Error ? programError.message : String(programError) 
+          });
         }
-      } catch (programError) {
-        // Log error but don't fail onboarding if program generation fails
-        console.error("[Onboarding] ❌ Automatic program generation failed:", programError);
-      }
+      })();
 
       res.json({ 
         success: true, 
         profile: finalProfile, 
         gym: firstGym,
-        hasProgram,
-        templatesCreated
+        program: {
+          jobId: job.id,
+          status: job.status
+        }
       });
     } catch (error) {
       if (error instanceof ZodError) {
@@ -982,6 +982,21 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
     }
   });
 
+  app.get("/api/program/generate/status/:jobId", isAuthenticatedOrDev, async (req: any, res) => {
+    const { jobId } = req.params;
+    const job = JobManager.getJob(jobId);
+    
+    if (!job) {
+      return res.status(404).json({ message: "Job not found" });
+    }
+    
+    res.json({
+      status: job.status,
+      progress: job.progress,
+      error: job.error
+    });
+  });
+
   app.get("/api/program/status", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
@@ -1160,7 +1175,7 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
       }
       
       
-      await storage.createProgramTemplatesFromAI(userId, profile.aiProgramData);
+      await storage.createProgramTemplatesFromAI(userId, profile.aiProgramData as any);
       
       const newTemplates = await storage.getUserProgramTemplates(userId);
       
@@ -1272,7 +1287,7 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
       await storage.clearUserProgramTemplates(userId);
       
       // Save new templates to database
-      await storage.createProgramTemplatesFromDeepSeek(userId, program);
+      await storage.createProgramTemplatesFromAI(userId, program);
       
       // Reset pass counter to 1 for new program cycle
       await storage.updateUserProfile(userId, { currentPassNumber: 1 });
