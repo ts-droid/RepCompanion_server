@@ -8,7 +8,7 @@
  */
 
 export type LoadType = "percentage_1rm" | "rpe" | "bodyweight" | "fixed";
-export type BlockType = "warmup" | "main" | "accessory" | "cardio" | "cooldown";
+export type BlockType = "warmup" | "main" | "accessory" | "cardio" | "cooldown" | "core";
 
 export interface V4TimeModel {
   work_seconds_per_10_reps: number;
@@ -115,7 +115,7 @@ export function buildBlueprintUserPromptV4(input: V4BlueprintInput): string {
             name: "string",
             blocks: [
               {
-                type: "warmup|main|accessory|cardio|cooldown",
+                type: "warmup|main|accessory|cardio|cooldown|core",
                 exercises: [
                   {
                     exercise_id: "string",
