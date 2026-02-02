@@ -456,6 +456,8 @@ export async function generateWorkoutProgramV4WithOpenAI(
 ): Promise<DeepSeekWorkoutProgram> {
   console.log(`[V4] Starting V4 generation flow`);
   console.log(`[V4] Priority: ${PROVIDER_PRIORITY.join(" → ")}`);
+  const englishLevel = mapTrainingLevelToEnglish(profileData.trainingLevel);
+  console.log(`[V4] Training level: "${profileData.trainingLevel}" -> English: "${englishLevel}"`);
   
   // Step A: Analysis
   const analysisResult = await executeWithFallback(
@@ -552,6 +554,8 @@ export async function generateWorkoutBlueprintV4WithOpenAI(
   targetDuration: number
 ): Promise<V4Blueprint> {
   console.log(`[V4] Starting Blueprint-only generation`);
+  const englishLevel = mapTrainingLevelToEnglish(profileData.trainingLevel);
+  console.log(`[V4] Training level: "${profileData.trainingLevel}" -> English: "${englishLevel}"`);
   
   // Step A: Analysis
   const analysisResult = await executeWithFallback(
