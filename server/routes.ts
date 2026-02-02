@@ -579,10 +579,22 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
       let firstGym: any = null;
 
       if (!gymIdToUse && equipmentRegistered) {
-        firstGym = await storage.createGym({
-          userId,
-          name: "Mitt Gym",
-        });
+        // Check if "Mitt Gym" already exists to avoid duplicates
+        const existingMittGym = await db.select().from(storage.schema.gyms)
+          .where(and(
+            eq(storage.schema.gyms.userId, userId),
+            eq(storage.schema.gyms.name, "Mitt Gym")
+          ))
+          .limit(1);
+
+        if (existingMittGym.length > 0) {
+           firstGym = existingMittGym[0];
+        } else {
+          firstGym = await storage.createGym({
+            userId,
+            name: "Mitt Gym",
+          });
+        }
         gymIdToUse = firstGym.id;
 
         const uniqueEquipment = Array.from(new Set(equipment));

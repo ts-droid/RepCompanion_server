@@ -1,4 +1,5 @@
 import type { UserProfile, UserEquipment } from "@shared/schema";
+import { enrichExerciseMetadata, normalizeMetadataValue } from "./exercise-matcher";
 import { z } from "zod";
 import OpenAI from "openai";
 import * as V4Prompts from "./prompts/v4";
@@ -152,13 +153,46 @@ const v4BlueprintSchema = z.object({
 export type V4Blueprint = z.infer<typeof v4BlueprintSchema>;
 
 /**
- * Hydrate V4 Blueprint into DeepSeek format for frontend compatibility
+ * Translate muscle focus strings to Swedish
+ */
+// Helper to translate session focus/name
+function translateSessionName(name: string | null | undefined): string {
+  if (!name) return "Helskropp Styrka";
+  
+  const MAPPINGS: Record<string, string> = {
+    'Upper Body': 'Överkropp',
+    'Lower Body': 'Underkropp',
+    'Full Body': 'Helskropp',
+    'Push': 'Press',
+    'Pull': 'Drag',
+    'Legs': 'Ben',
+    'Strength': 'Styrka',
+    'Hypertrophy': 'Muskeltillväxt',
+    'Power': 'Explosivitet',
+    'Conditioning': 'Kondition',
+    'Endurance': 'Uthållighet',
+    'Core': 'Bål',
+    'Focus': 'Fokus',
+    'Accessory': 'Komplement',
+    'Explosive': 'Explosiv'
+  };
+  
+  let translated = name;
+  for (const [eng, swe] of Object.entries(MAPPINGS)) {
+    const regex = new RegExp(`\\b${eng}\\b`, 'gi');
+    translated = translated.replace(regex, swe);
+  }
+  return translated;
+}
+
+/**
+ * Hydrate V4 Blueprint into standard format for frontend compatibility
  */
 async function hydrateV4Blueprint(
   blueprint: V4Blueprint, 
   profile: any,
   timeModel: any
-): Promise<DeepSeekWorkoutProgram> {
+): Promise<AIWorkoutProgram> {
   const exerciseIds = new Set<string>();
   blueprint.sessions.forEach(s => s.blocks.forEach(b => b.exercises.forEach(e => exerciseIds.add(e.exercise_id))));
   
@@ -169,6 +203,12 @@ async function hydrateV4Blueprint(
     if (ex.id) catalogMap.set(ex.id, ex);
   });
 
+  const equipmentCatalog = await storage.getEquipmentCatalog();
+  const eqMap = new Map<string, string>();
+  equipmentCatalog.forEach(eq => {
+    if (eq.equipmentKey) eqMap.set(eq.equipmentKey, eq.name || eq.nameEn || eq.equipmentKey);
+  });
+
   const weeklySessions = blueprint.sessions.map(s => {
     const warmup: any[] = [];
     const main_work: any[] = [];
@@ -177,8 +217,27 @@ async function hydrateV4Blueprint(
     s.blocks.forEach(block => {
       block.exercises.forEach(ex => {
         const cat = catalogMap.get(ex.exercise_id);
+        if (!cat) {
+          console.warn(`[V4 HYDRATION] ⚠️ Exercise ID "${ex.exercise_id}" not found in catalog!`);
+        } else {
+          // Auto-enrich existing exercise if catalog data is missing
+          // This is a "fire-and-forget" background operation
+          enrichExerciseMetadata(cat.id, {
+            primaryMuscles: ex.primary_muscles,
+            secondaryMuscles: ex.secondary_muscles,
+            equipment: ex.required_equipment
+          });
+        }
+        
+        // Localization: Return English name or ID (Client handles localization)
+        const exerciseName = cat?.nameEn || cat?.name || ex.exercise_id;
+        
+        // Return raw equipment IDs (Client handles localization)
+        const rawEq = cat?.requiredEquipment || ex.required_equipment || [];
+        const localizedEq = rawEq; // Pass through raw IDs (e.g. 'dumbbells', 'trap_bar')
+
         const hydratedEx = {
-          exercise_name: cat?.nameEn || cat?.name || ex.exercise_id,
+          exercise_name: exerciseName,
           sets: ex.sets,
           reps: ex.reps,
           rest_seconds: ex.rest_seconds ?? timeModel.restBetweenSetsSeconds,
@@ -186,7 +245,7 @@ async function hydrateV4Blueprint(
           suggested_weight_kg: null,
           suggested_weight_notes: null,
           target_muscles: cat?.primaryMuscles || ex.primary_muscles || [],
-          required_equipment: cat?.requiredEquipment || ex.required_equipment || [],
+          required_equipment: localizedEq,
           technique_cues: cat?.description ? [cat.description] : [],
           category: ex.category || cat?.category,
           primary_muscles: ex.primary_muscles || cat?.primaryMuscles,
@@ -220,7 +279,8 @@ async function hydrateV4Blueprint(
     return {
       session_number: s.session_index,
       weekday: s.weekday,
-      session_name: s.name,
+      session_name: translateSessionName(s.name),
+      muscle_focus: translateSessionName(s.name), // Attempt to translate focus from name or metadata
       session_type: "strength",
       estimated_duration_minutes: Math.ceil(sessionDurationSeconds / 60),
       warmup,
@@ -248,12 +308,23 @@ async function hydrateV4Blueprint(
       available_equipment: (profile.equipmentList || "").split(",").filter(Boolean),
     },
     program_overview: {
-      week_focus_summary: `${blueprint.program_name} - V4 Standard`,
-      expected_difficulty: "Moderate",
-      notes_on_progression: "Progress by increasing weight or reps.",
+      week_focus_summary: "Localized Workout Program",
+      focus_distribution: {
+        strength: 25,
+        hypertrophy: 25,
+        endurance: 25,
+        cardio: 25
+      }
     },
     weekly_sessions: weeklySessions,
   };
+}
+
+// Response structure for AI-generated programs
+export interface AIWorkoutProgram {
+  user_profile: any;
+  program_overview: any;
+  weekly_sessions: any[];
 }
 
 // Helper to get configuration for a specific provider name
@@ -317,6 +388,8 @@ async function executeWithFallback(
 /**
  * Main V4 generation flow
  */
+// Helper to translate session focus names
+
 export async function generateWorkoutProgramV4WithOpenAI(
   profileData: any,
   targetDuration: number
@@ -362,7 +435,7 @@ export async function generateWorkoutProgramV4WithOpenAI(
 
   const blueprintResult = await executeWithFallback(
     [
-      { role: "system", content: V4Prompts.buildBlueprintSystemPromptV4() },
+      { role: "system", content: ((profileData.sessionsPerWeek || 3) <= 3) ? V4Prompts.buildBlueprintSystemPromptV4_5() : V4Prompts.buildBlueprintSystemPromptV4() },
       { role: "user", content: V4Prompts.buildBlueprintUserPromptV4({
         schedule: {
           sessions_per_week: profileData.sessionsPerWeek || 3,
@@ -451,7 +524,7 @@ export async function generateWorkoutBlueprintV4WithOpenAI(
 
   const blueprintResult = await executeWithFallback(
     [
-      { role: "system", content: V4Prompts.buildBlueprintSystemPromptV4() },
+      { role: "system", content: ((profileData.sessionsPerWeek || 3) <= 3) ? V4Prompts.buildBlueprintSystemPromptV4_5() : V4Prompts.buildBlueprintSystemPromptV4() },
       { role: "user", content: V4Prompts.buildBlueprintUserPromptV4({
         schedule: {
           sessions_per_week: profileData.sessionsPerWeek || 3,
@@ -502,7 +575,7 @@ export async function generateWorkoutBlueprintV4WithOpenAI(
     s.blocks.forEach(b => {
       b.exercises.forEach(ex => {
         const cat = catalogMap.get(ex.exercise_id);
-        ex.exercise_name = cat?.nameEn || cat?.name || ex.exercise_id;
+        ex.exercise_name = cat?.name || cat?.nameEn || ex.exercise_id;
       });
     });
   });
@@ -519,7 +592,7 @@ export async function generateWorkoutProgramWithVersionSwitch(
   arg2?: any,
   arg3?: any,
   arg4?: any
-): Promise<DeepSeekWorkoutProgram> {
+): Promise<AIWorkoutProgram> {
   let profileData: any;
   let targetDuration: number = 60;
 

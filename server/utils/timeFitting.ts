@@ -142,8 +142,8 @@ export function estimateExerciseSeconds(ex: ExercisePrescription, cfg: TimeModel
       ? ex.rest_seconds
       : cfg.restBetweenSetsSeconds;
 
-  // (sets * work) + ((sets - 1) * rest)
-  return sets * workPerSet + (sets - 1) * betweenSetsRest;
+  // Standard formula: Work for all sets + rest BETWEEN them (no rest after last set)
+  return sets * workPerSet + Math.max(0, sets - 1) * betweenSetsRest;
 }
 
 /**

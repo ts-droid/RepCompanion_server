@@ -69,7 +69,7 @@ async function run(databaseUrl: string) {
     // 1. Fetch all exercises
     await log('Fetching all exercises...');
     const exercisesResult = await client.query(`
-      SELECT id, name, "primary_muscles", "secondary_muscles", "required_equipment"
+      SELECT id, name, exercise_id, "primary_muscles", "secondary_muscles", "required_equipment"
       FROM exercises
       -- Fetch all exercises (assuming checking catalog)
     `);
@@ -90,7 +90,7 @@ async function run(databaseUrl: string) {
       const allMuscles = Array.from(new Set([...pMuscles, ...sMuscles]));
 
       return {
-        id: ex.id,
+        id: ex.exercise_id || ex.id,
         name: ex.name,
         muscles: allMuscles,
         equipment: ex.required_equipment || []

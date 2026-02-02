@@ -252,7 +252,7 @@ export const userTimeModel = pgTable("user_time_model", {
   workSecondsPer10Reps: integer("work_seconds_per_10_reps").notNull().default(30),
   restBetweenSetsSeconds: integer("rest_between_sets_seconds").notNull().default(90),
   restBetweenExercisesSeconds: integer("rest_between_exercises_seconds").notNull().default(120),
-  warmupMinutesDefault: integer("warmup_minutes_default").notNull().default(8),
+  warmupMinutesDefault: integer("warmup_minutes_default").notNull().default(7),
   cooldownMinutesDefault: integer("cooldown_minutes_default").notNull().default(5),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

@@ -52,12 +52,47 @@ export function buildBlueprintSystemPromptV4(): string {
     "",
     "Hard rules:",
     "- You may ONLY use exercise_id values present in candidate_pools buckets.",
-    "- Return exercise_id only (no exercise names).",
-    "- Use English only for all text fields.",
+    "- RETURN exercise_id for matching, AND 'exercise_name' in SWEDISH for presentation.",
+    "- Use Swedish for ALL presentation text: 'program_name', session 'name', exercise 'notes', and metadata fields (category, muscles, equipment names), but KEEP the 'exercise_id' as the English key provided.",
     "- Provide priority per exercise: 1=protect, 2=adjustable, 3=remove first.",
-    "- For EVERY exercise, provide complete metadata (category, required_equipment, primary_muscles, secondary_muscles, difficulty).",
+    "- For EVERY exercise, provide complete metadata (category, required_equipment, primary_muscles, secondary_muscles, difficulty) in SWEDISH.",
     "- Keep sessions balanced across the week (~48h recovery for the same primary muscle groups where possible).",
     "- Respect the time_model. Try to land within allowed_duration_minutes, but the server will enforce final fitting.",
+    "- VOLUME GUIDANCE: Aim for 5-8 exercises per 60-minute session. Use more exercises rather than more sets to fill time.",
+    "- SETS GUIDANCE: Standard strength/hypertrophy exercises should typically have 2-4 sets. Do NOT exceed 6 sets for any exercise.",
+    "- SESSION NAMING: Create descriptive names.",
+    "- STRICTION: Do NOT use generic names.",
+  ].join("\n");
+}
+
+export function buildBlueprintSystemPromptV4_5(): string {
+  return [
+    "Role: You are an elite Strength & Conditioning coach designing a PERIODIZED MESOCYCLE.",
+    "",
+    "You must output STRICT JSON only (no markdown, no commentary).",
+    "",
+    "OBJECTIVE:",
+    "Create a flexible training cycle (Mesocycle) that spans 4 weeks. NOT just a single week.",
+    "Specifically for users with LOW frequency (e.g. 2-3 sessions/week), do NOT cram the whole body into one week if a split (Upper/Lower or PPL) would be better spread over 2 weeks.",
+    "",
+    "Hard rules:",
+    "- You may ONLY use exercise_id values present in candidate_pools buckets.",
+    "- RETURN exercise_id for matching, AND 'exercise_name' in SWEDISH for presentation.",
+    "- Use Swedish for ALL presentation text: 'program_name', session 'name', exercise 'notes', and metadata fields (category, muscles, equipment names), but KEEP the 'exercise_id' as the English key provided.",
+    "- Provide priority per exercise: 1=protect, 2=adjustable, 3=remove first.",
+    "- For EVERY exercise, provide complete metadata (category, required_equipment, primary_muscles, secondary_muscles, difficulty) in SWEDISH.",
+    "",
+    "CYCLE STRUCTURE:",
+    "- If sessions_per_week is LOW (1-3): Create a pool of 6-12 unique sessions that rotate. For example, Session 1 (Upper), Session 2 (Lower), Session 3 (Upper)... spanning multiple weeks.",
+    "- If sessions_per_week is HIGH (4+): You can stick to a standard Main Week cycle.",
+    "- ASSIGN DAYS: Use the provided `weekdays` to assign realistic days. SInce this is a multi-week cycle, you can REPEAT days (e.g. Session 1 is Monday, Session 3 is Monday of Week 2).",
+    "",
+    "VOLUME & SETS:",
+    "- Aim for 5-8 exercises per 60-minute session.",
+    "- Sets: 2-4 per exercise. Max 6.",
+    "",
+    "NAMING:",
+    "- Create descriptive names.",
   ].join("\n");
 }
 
@@ -106,6 +141,63 @@ export function buildBlueprintUserPromptV4(input: V4BlueprintInput): string {
       constraints: {
         ids_only: true,
         must_use_candidate_pool_only: true
+      }
+    },
+    null,
+    2
+  );
+}
+
+export function buildBlueprintUserPromptV4_5(input: V4BlueprintInput): string {
+  // Enforce 4-week duration for low frequency
+  const targetSessions = (input.schedule.sessions_per_week || 3) * 4;
+  
+  return JSON.stringify(
+    {
+      objectif: "Create a 4-WEEK MESOCYCLE with unique rotating sessions.",
+      cycle_duration: "4 Weeks",
+      total_sessions_required: targetSessions, 
+      schedule: input.schedule,
+      focus_distribution: input.focus_distribution,
+      sport: input.sport ?? null,
+      time_model: input.time_model,
+      candidate_pool_hash: input.candidate_pool_hash ?? null,
+      candidate_pools: input.candidate_pools,
+      output_schema: {
+        program_name: "string",
+        duration_weeks: 4,
+        sessions: [ // Provide ample examples to encourage multiple sessions
+          {
+            session_index: 1,
+            weekday: "Mon (Week 1)",
+            name: "Upper Body Push",
+            blocks: []
+          },
+          {
+            session_index: 2,
+            weekday: "Wed (Week 1)",
+            name: "Lower Body Squat",
+            blocks: []
+          },
+          {
+             session_index: 3,
+             weekday: "Fri (Week 1)",
+             name: "Upper Body Pull",
+             blocks: []
+          },
+          {
+            session_index: 4,
+            weekday: "Mon (Week 2)",
+            name: "Lower Body Hinge",
+            blocks: []
+          },
+           // ... continue up to session 12
+        ]
+      },
+      constraints: {
+        ids_only: true,
+        must_use_candidate_pool_only: true,
+        generate_full_cycle: true
       }
     },
     null,

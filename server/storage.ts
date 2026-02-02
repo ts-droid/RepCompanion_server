@@ -160,7 +160,7 @@ export interface IStorage {
   updateProgramTemplate(id: string, data: { dayOfWeek?: number }): Promise<ProgramTemplate>;
   getNextTemplate(userId: string): Promise<{ template: ProgramTemplate; exercises: ProgramTemplateExercise[] } | null>;
   createProgramTemplatesFromAI(userId: string, aiProgramData: any): Promise<void>;
-  createProgramTemplatesFromDeepSeek(userId: string, program: import("./ai-service").DeepSeekWorkoutProgram): Promise<void>;
+  createProgramTemplatesFromAI(userId: string, program: import("./ai-service").AIWorkoutProgram): Promise<void>;
   clearUserProgramTemplates(userId: string): Promise<void>;
   updateLastCompletedTemplate(userId: string, templateId: string): Promise<void>;
   getTemplatesWithMetadata(userId: string): Promise<Array<{ template: ProgramTemplate; exerciseCount: number; exercises: ProgramTemplateExercise[]; isNext: boolean }>>;
@@ -1179,86 +1179,8 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async createProgramTemplatesFromAI(userId: string, aiProgramData: any): Promise<void> {
-    const { getReferenceWeight } = await import("../lib/referenceWeights");
-    
-    console.log("[STORAGE] createProgramTemplatesFromAI called for userId:", userId);
-    console.log("[STORAGE] aiProgramData:", JSON.stringify(aiProgramData).substring(0, 300));
-    
-    const phases = aiProgramData.phases || [];
-    console.log("[STORAGE] Number of phases:", phases.length);
-    
-    const allSessions: any[] = [];
-    
-    phases.forEach((phase: any, phaseIdx: number) => {
-      console.log(`[STORAGE] Phase ${phaseIdx}:`, phase.phaseName, "Sessions:", phase.sessions?.length || 0);
-      if (phase.sessions && Array.isArray(phase.sessions)) {
-        allSessions.push(...phase.sessions);
-      }
-    });
-    
-    console.log("[STORAGE] Total sessions to create:", allSessions.length);
-    
-    const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
-    
-    for (let i = 0; i < allSessions.length; i++) {
-      const session = allSessions[i];
-      const templateName = `Pass ${letters[i] || i + 1}`;
-      
-      console.log(`[STORAGE] Creating template ${i + 1}/${allSessions.length}: ${templateName}`);
-      
-      const [template] = await db
-        .insert(programTemplates)
-        .values({
-          userId,
-          templateName,
-          dayOfWeek: null,
-        })
-        .returning();
-      
-      const exercises = session.exercises || [];
-      console.log(`[STORAGE] Template ${templateName} has ${exercises.length} exercises`);
-      
-      if (exercises.length === 0) {
-        console.warn(`[STORAGE] WARNING: Template ${templateName} has no exercises!`);
-      }
-      
-      for (let j = 0; j < exercises.length; j++) {
-        const exercise = exercises[j];
-        const exerciseName = exercise.name || exercise.exerciseTitle || exercise.exerciseName || 'Unknown';
-        const exerciseKey = exercise.exerciseKey || `ex_${i}_${j}`;
-        
-        // Match exercise to catalog and log metadata if unmapped
-        const matchResult = await matchExercise(exerciseName, {
-          category: exercise.category,
-          equipment: exercise.equipment ? [exercise.equipment] : [],
-          primaryMuscles: exercise.primaryMuscles,
-          secondaryMuscles: exercise.secondaryMuscles,
-          difficulty: exercise.difficulty
-        });
-
-        // For V2, we are more lenient: use the matched name if found, otherwise keep original
-        const finalExerciseName = matchResult.matched ? (matchResult.exerciseName || exerciseName) : exerciseName;
-        const referenceWeight = getReferenceWeight(finalExerciseName);
-        
-        console.log(`[STORAGE] Adding exercise ${j + 1}: ${finalExerciseName}${matchResult.matched ? '' : ' (UNMAPPED)'}`);
-        
-        await db.insert(programTemplateExercises).values({
-          templateId: template.id,
-          exerciseKey: exerciseKey,
-          exerciseName: finalExerciseName,
-          orderIndex: j,
-          targetSets: parseInt(exercise.sets) || 3,
-          targetReps: exercise.reps || '8-12',
-          targetWeight: referenceWeight,
-          requiredEquipment: exercise.equipment || [],
-          muscles: exercise.muscleGroups || exercise.muscles || [],
-          notes: exercise.notes || null,
-        });
-      }
-    }
-    
-    console.log("[STORAGE] Template creation complete");
+  async clearUserProgramTemplates(userId: string): Promise<void> {
+    await db.delete(programTemplates).where(eq(programTemplates.userId, userId));
   }
 
   /**
@@ -1418,8 +1340,8 @@ export class DatabaseStorage implements IStorage {
     return null;
   }
 
-  async createProgramTemplatesFromDeepSeek(userId: string, program: import("./ai-service").DeepSeekWorkoutProgram): Promise<void> {
-    console.log("[STORAGE] createProgramTemplatesFromDeepSeek called for userId:", userId);
+  async createProgramTemplatesFromAI(userId: string, program: import("./ai-service").AIWorkoutProgram): Promise<void> {
+    console.log("[STORAGE] createProgramTemplatesFromAI called for userId:", userId);
     console.log("[STORAGE] Program overview:", program.program_overview.week_focus_summary);
     
     const weeklySessions = program.weekly_sessions || [];
@@ -1476,11 +1398,11 @@ export class DatabaseStorage implements IStorage {
           if (muscleArray.length === 1) {
             muscleFocus = muscleArray[0];
           } else if (muscleArray.some(m => m.toLowerCase().includes('chest') || m.toLowerCase().includes('bröst'))) {
-            muscleFocus = "Upper Body - Push";
+            muscleFocus = "Överkropp - Press";
           } else if (muscleArray.some(m => m.toLowerCase().includes('back') || m.toLowerCase().includes('rygg'))) {
-            muscleFocus = "Upper Body - Pull";
+            muscleFocus = "Överkropp - Drag";
           } else if (muscleArray.some(m => m.toLowerCase().includes('leg') || m.toLowerCase().includes('ben'))) {
-            muscleFocus = "Legs";
+            muscleFocus = "Underkropp/Ben";
           } else {
             muscleFocus = muscleArray.slice(0, 2).join(" - ");
           }
@@ -1527,7 +1449,7 @@ export class DatabaseStorage implements IStorage {
         }
         
         const finalExerciseName = matchResult.exerciseName;
-        
+        // Don't log matched name as key, use ID or slugify matched result
         const exerciseKey = matchResult.exerciseId || finalExerciseName.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
         
         // POST-VALIDATION: Fix AI errors where time-based values are used for reps-based exercises
@@ -1576,19 +1498,9 @@ export class DatabaseStorage implements IStorage {
           }
         }
         
-        // CRITICAL VALIDATION: Enforce English-only exercise names
-        const hasSwedishChars = /[åäöÅÄÖ]/.test(finalExerciseName);
-        const hasSwedishWords = finalExerciseName.toLowerCase().includes('böj') || 
-                                finalExerciseName.toLowerCase().includes('lyft') ||
-                                (finalExerciseName.toLowerCase().includes('press') && finalExerciseName.toLowerCase().includes('bänk'));
-        
-        if (hasSwedishChars || hasSwedishWords) {
-          console.error(`[VALIDATION ERROR] ❌ Swedish exercise name detected: "${finalExerciseName}" (AI="${aiGeneratedName}") - SKIPPING`);
-          console.warn(`[VALIDATION] Skipping Swedish exercise to enforce English-only policy`);
-          continue; // Skip this exercise - don't insert it
-        }
-        
-        console.log(`[VALIDATION] ✅ English exercise name confirmed: "${finalExerciseName}"`);
+        // RELAXED VALIDATION: Allow Swedish names/chars for presentation
+        // Matching logic still prefers English IDs, but we allow localized display names
+        console.log(`[VALIDATION] ✅ Matched exercise: "${finalExerciseName}"`);
         
         // Calculate suggested weight: use AI's suggestion if available, otherwise calculate locally
         let suggestedWeight: number | null = null;
