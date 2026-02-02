@@ -467,7 +467,7 @@ export async function generateWorkoutProgramV4WithOpenAI(
           sex: profileData.sex,
           weight_kg: profileData.bodyWeight,
           height_cm: profileData.height,
-          training_level: profileData.trainingLevel,
+          training_level: mapTrainingLevelToEnglish(profileData.trainingLevel),
           primary_goal: profileData.trainingGoals,
           sport: profileData.specificSport,
         }
