@@ -187,6 +187,25 @@ function translateSessionName(name: string | null | undefined): string {
 }
 
 /**
+ * Maps Swedish training levels to English for AI analysis
+ */
+function mapTrainingLevelToEnglish(level: string | null | undefined): string {
+  if (!level) return "intermediate";
+  
+  const MAPPINGS: Record<string, string> = {
+    'nyborjare': 'beginner',
+    'nybörjare': 'beginner',
+    'van': 'intermediate',
+    'mycket_van': 'advanced',
+    'mycket van': 'advanced',
+    'elit': 'elite'
+  };
+  
+  const normalized = level.toLowerCase().trim();
+  return MAPPINGS[normalized] || normalized;
+}
+
+/**
  * Hydrate V4 Blueprint into standard format for frontend compatibility
  */
 async function hydrateV4Blueprint(
@@ -544,7 +563,7 @@ export async function generateWorkoutBlueprintV4WithOpenAI(
           sex: profileData.sex,
           weight_kg: profileData.bodyWeight,
           height_cm: profileData.height,
-          training_level: profileData.trainingLevel,
+          training_level: mapTrainingLevelToEnglish(profileData.trainingLevel),
           primary_goal: profileData.trainingGoals,
           sport: profileData.specificSport,
         }
