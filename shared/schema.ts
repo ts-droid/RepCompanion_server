@@ -205,6 +205,7 @@ export const programTemplates = pgTable("program_templates", {
   templateName: varchar("template_name", { length: 100 }).notNull(),
   muscleFocus: varchar("muscle_focus", { length: 100 }), // e.g., "Överkropp - Push", "Ben & Rumpa"
   dayOfWeek: integer("day_of_week"), // 1=Monday, 2=Tuesday, ..., 7=Sunday
+  weekNumber: integer("week_number"), // 1, 2, 3, 4 etc. for periodized programs
   estimatedDurationMinutes: integer("estimated_duration_minutes"), // AI's calculated session duration
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

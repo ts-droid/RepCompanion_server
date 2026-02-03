@@ -39,6 +39,7 @@ console.log(`[AI PROVIDER] Priority order: ${PROVIDER_PRIORITY.join(" → ")}`);
 // Schema for DeepSeek Workout Program (Frontend-compatible format)
 const weeklySessionSchema = z.object({
   session_number: z.number(),
+  week_number: z.number().optional(),
   weekday: z.string().optional(),
   session_name: z.string(),
   muscle_focus: z.string().optional(),
@@ -127,6 +128,7 @@ const v4BlueprintSchema = z.object({
   duration_weeks: z.number(),
   sessions: z.array(z.object({
     session_index: z.number(),
+    week_number: z.number().optional(),
     weekday: z.string(),
     name: z.string(),
     blocks: z.array(z.object({
@@ -302,6 +304,7 @@ async function hydrateV4Blueprint(
 
     return {
       session_number: s.session_index,
+      week_number: (s as any).week_number || 1,
       weekday: s.weekday,
       session_name: translateSessionName(s.name),
       muscle_focus: translateSessionName(s.name), // Attempt to translate focus from name or metadata

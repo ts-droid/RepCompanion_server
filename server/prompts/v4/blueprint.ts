@@ -93,7 +93,8 @@ export function buildBlueprintSystemPromptV4_5(): string {
     "- Sets: 2-4 per exercise. Max 6.",
     "",
     "NAMING:",
-    "- Create descriptive names.",
+    "- Create descriptive names in Swedish.",
+    "- Do NOT include 'Pass A', 'Pass 1', 'Session A' or similar prefixes in session names. Focus on the muscle group or goal (e.g., 'Underkropp - Styrka' instead of 'Pass A').",
   ].join("\n");
 }
 
@@ -112,6 +113,7 @@ export function buildBlueprintUserPromptV4(input: V4BlueprintInput): string {
         sessions: [
           {
             session_index: 1,
+            week_number: 1,
             weekday: "Mon",
             name: "string",
             blocks: [
@@ -170,26 +172,30 @@ export function buildBlueprintUserPromptV4_5(input: V4BlueprintInput): string {
         sessions: [ // Provide ample examples to encourage multiple sessions
           {
             session_index: 1,
+            week_number: 1,
             weekday: "Mon (Week 1)",
-            name: "Upper Body Push",
+            name: "Underkropp - Knädominant",
             blocks: []
           },
           {
             session_index: 2,
-            weekday: "Wed (Week 1)",
-            name: "Lower Body Squat",
+            week_number: 1,
+            weekday: "Ons (Week 1)",
+            name: "Överkropp - Press",
             blocks: []
           },
           {
              session_index: 3,
-             weekday: "Fri (Week 1)",
-             name: "Upper Body Pull",
+             week_number: 1,
+             weekday: "Fre (Week 1)",
+             name: "Överkropp - Drag",
              blocks: []
           },
           {
             session_index: 4,
-            weekday: "Mon (Week 2)",
-            name: "Lower Body Hinge",
+            week_number: 2,
+            weekday: "Mån (Week 2)",
+            name: "Underkropp - Höftdominant",
             blocks: []
           },
            // ... continue up to session 12

@@ -1382,13 +1382,40 @@ export class DatabaseStorage implements IStorage {
     
     for (let i = 0; i < weeklySessions.length; i++) {
       const session = weeklySessions[i];
-      const templateName = session.session_name || `Pass ${letters[i] || i + 1}`;
+      let templateName = session.session_name || `Pass ${letters[i] || i + 1}`;
+      
+      // Clean up "Pass A", "Pass 1" etc if they leaked through
+      templateName = templateName.replace(/Pass\s+[A-Z0-9](\s*[:\-]\s*)?/i, '').trim();
+      templateName = templateName.replace(/Session\s+[A-Z0-9](\s*[:\-]\s*)?/i, '').trim();
+      
+      // If cleaning made it empty, use a fallback
+      if (!templateName) {
+        templateName = session.muscle_focus || `Pass ${letters[i] || i + 1}`;
+      }
       
       // Map AI's weekday to dayOfWeek integer
-      const weekdayStr = session.weekday?.toLowerCase() || '';
-      const dayOfWeek = weekdayToNumber[weekdayStr] || null;
+      const weekdayRaw = session.weekday || '';
+      const weekdayStr = weekdayRaw.toLowerCase();
       
-      console.log(`[STORAGE] Creating template ${i + 1}/${weeklySessions.length}: ${templateName} - ${session.session_name} (${session.weekday} → dayOfWeek=${dayOfWeek}, ${session.estimated_duration_minutes}min)`);
+      // Extract day from strings like "Mon (Week 1)"
+      let normalizedDay = weekdayStr;
+      if (weekdayStr.includes('(')) {
+        normalizedDay = weekdayStr.split('(')[0].trim();
+      }
+      const dayOfWeek = weekdayToNumber[normalizedDay] || null;
+      
+      // Extract week number
+      let weekNumber = session.week_number || null;
+      if (!weekNumber && weekdayStr.includes('week')) {
+        const match = weekdayStr.match(/week\s*(\d+)/i);
+        if (match) weekNumber = parseInt(match[1]);
+      }
+      if (!weekNumber && weekdayStr.includes('vecka')) {
+        const match = weekdayStr.match(/vecka\s*(\d+)/i);
+        if (match) weekNumber = parseInt(match[1]);
+      }
+      
+      console.log(`[STORAGE] Creating template ${i + 1}/${weeklySessions.length}: ${templateName} - ${session.session_name} (week=${weekNumber}, dayOfWeek=${dayOfWeek})`);
       
       // Generate muscle_focus if AI didn't provide it (defensive fallback)
       let muscleFocus = session.muscle_focus || null;
@@ -1424,6 +1451,7 @@ export class DatabaseStorage implements IStorage {
           templateName,
           muscleFocus: muscleFocus,
           dayOfWeek: dayOfWeek,
+          weekNumber: weekNumber,
           estimatedDurationMinutes: session.estimated_duration_minutes,
         })
         .returning();
