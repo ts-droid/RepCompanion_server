@@ -1494,7 +1494,7 @@ export default function AdminDashboard() {
               <label className="text-sm font-medium">Email</label>
               <Input 
                 value={editingUser?.email || ""} 
-                onChange={(e) => setEditingUser(prev => prev ? { ...prev, email: e.target.value } : null)} 
+                onChange={(e) => setEditingUser((prev: any) => prev ? { ...prev, email: e.target.value } : null)} 
               />
             </div>
             
@@ -1502,7 +1502,7 @@ export default function AdminDashboard() {
               <label className="text-sm font-medium">Display Name</label>
               <Input 
                 value={editingUser?.displayName || ""} 
-                onChange={(e) => setEditingUser(prev => prev ? { ...prev, displayName: e.target.value } : null)} 
+                onChange={(e) => setEditingUser((prev: any) => prev ? { ...prev, displayName: e.target.value } : null)} 
               />
             </div>
 
@@ -1510,7 +1510,7 @@ export default function AdminDashboard() {
               <Checkbox 
                 id="isPremium" 
                 checked={editingUser?.isPremium || false} 
-                onCheckedChange={(checked) => setEditingUser(prev => prev ? { ...prev, isPremium: !!checked } : null)}
+                onCheckedChange={(checked) => setEditingUser((prev: any) => prev ? { ...prev, isPremium: !!checked } : null)}
               />
               <label htmlFor="isPremium" className="text-sm font-medium leading-none cursor-pointer">
                 Premium-användare
