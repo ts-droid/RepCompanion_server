@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, Search, Plus, Edit, Trash2, Check, RefreshCw, AlertCircle, Database, Users, Dumbbell, MapPin, GitMerge } from "lucide-react";
+import { ArrowLeft, Search, Plus, Edit, Trash2, Check, RefreshCw, AlertCircle, Database, Users, Dumbbell, MapPin, GitMerge, Cpu, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+// ... imports
+import AiPromptsTab from "@/components/AiPromptsTab";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -411,6 +413,7 @@ export default function AdminDashboard() {
             <TabsTrigger value="equipment" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all duration-300">Utrustning</TabsTrigger>
             <TabsTrigger value="gyms" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all duration-300">Gym</TabsTrigger>
             <TabsTrigger value="users" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all duration-300">Användare</TabsTrigger>
+            <TabsTrigger value="prompts" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground rounded-lg transition-all duration-300">AI-Prompter</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="animate-admin-fade delay-1">
@@ -446,6 +449,10 @@ export default function AdminDashboard() {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          <TabsContent value="prompts" className="animate-admin-fade">
+            <AiPromptsTab />
           </TabsContent>
 
           <TabsContent value="unmapped" className="animate-admin-fade">

@@ -501,9 +501,9 @@ export async function generateWorkoutProgramV4WithOpenAI(
   const candidatePools: V4Prompts.V4CandidatePools = {};
   pools.forEach(p => Object.assign(candidatePools, p.buckets));
 
-  // Fetch prompts from DB or fallback
-  const dbPromptV4 = await storage.getAiPrompt("v4-blueprint-system");
-  const dbPromptV4_5 = await storage.getAiPrompt("v4.5-blueprint-system");
+  // Fetch active prompts from DB or fallback
+  const dbPromptV4 = await storage.getActiveAiPrompt("v4-system");
+  const dbPromptV4_5 = await storage.getActiveAiPrompt("v4.5-system");
   const systemPromptV4 = dbPromptV4 ? dbPromptV4.content : V4Prompts.buildBlueprintSystemPromptV4();
   const systemPromptV4_5 = dbPromptV4_5 ? dbPromptV4_5.content : V4Prompts.buildBlueprintSystemPromptV4_5();
 

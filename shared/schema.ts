@@ -479,10 +479,14 @@ export const userSubscriptions = pgTable("user_subscriptions", {
 
 // AI Prompts - stores system and user prompt templates
 export const aiPrompts = pgTable("ai_prompts", {
-  id: varchar("id").primaryKey(), // e.g., "v4-blueprint-system", "v4.5-blueprint-system"
+  id: varchar("id").primaryKey(), // unique slug or UUID
+  name: varchar("name", { length: 100 }).notNull(), // User friendly name
   version: varchar("version", { length: 20 }).notNull(), // "v4", "v4.5", etc.
+  role: varchar("role", { length: 50 }).notNull(), // "v4-system", "v4-user", "v4.5-system"
   promptType: varchar("prompt_type", { length: 50 }).notNull(), // "system", "user", "analysis"
   content: text("content").notNull(),
+  isActive: boolean("is_active").default(false).notNull(),
+  description: text("description"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 

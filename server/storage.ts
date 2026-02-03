@@ -2051,6 +2051,15 @@ export class DatabaseStorage implements IStorage {
     return prompt;
   }
 
+  async getActiveAiPrompt(role: string): Promise<AiPrompt | undefined> {
+    const [prompt] = await db
+      .select()
+      .from(aiPrompts)
+      .where(and(eq(aiPrompts.role, role), eq(aiPrompts.isActive, true)))
+      .limit(1);
+    return prompt;
+  }
+
   async getAiPromptsByVersion(version: string): Promise<AiPrompt[]> {
     return await db.select().from(aiPrompts).where(eq(aiPrompts.version, version));
   }
@@ -2060,6 +2069,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async upsertAiPrompt(promptData: InsertAiPrompt): Promise<AiPrompt> {
+    // If this prompt is marked as active, deactivate others with the same role
+    if (promptData.isActive) {
+      await db
+        .update(aiPrompts)
+        .set({ isActive: false })
+        .where(eq(aiPrompts.role, promptData.role));
+    }
+
     const [existing] = await db.select().from(aiPrompts).where(eq(aiPrompts.id, promptData.id));
 
     if (existing) {
