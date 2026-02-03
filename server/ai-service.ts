@@ -183,6 +183,10 @@ function translateSessionName(name: string | null | undefined): string {
     const regex = new RegExp(`\\b${eng}\\b`, 'gi');
     translated = translated.replace(regex, swe);
   }
+
+  // Strip Week prefix if it exists (e.g. "Vecka 1: ", "Week 1: ")
+  translated = translated.replace(/^(Vecka|Week)\s+\d+:?\s*/i, '');
+
   return translated;
 }
 
@@ -541,8 +545,6 @@ export async function generateWorkoutProgramV4WithOpenAI(
   const hydrated = await hydrateV4Blueprint(blueprint, profileData, timeModel);
   console.log(`[V4] Hydration and fitting complete`);
   
-  if (jobId) JobManager.updateJob(jobId, { progress: 100, status: 'completed' });
-
   return hydrated;
 }
 
