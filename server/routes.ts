@@ -13,7 +13,7 @@ import {
 import { sendMagicLinkEmail } from "./email-service";
 import jwt from "jsonwebtoken";
 import * as schema from "@shared/schema";
-import { insertUserProfileSchema, updateUserProfileSchema, insertGymSchema, updateGymSchema, insertEquipmentSchema, insertWorkoutSessionSchema, insertExerciseLogSchema, updateExerciseLogSchema, suggestAlternativeRequestSchema, suggestAlternativeResponseSchema, trackPromoImpressionSchema, trackAffiliateClickSchema, insertNotificationPreferencesSchema, promoIdParamSchema, promoPlacementParamSchema, generateProgramRequestSchema, exercises, exerciseLogs, workoutSessions, programTemplateExercises, unmappedExercises, equipmentCatalog, exerciseAliases, equipmentAliases, gyms, users, userTimeModel, adminUsers, type ExerciseLog } from "@shared/schema";
+import { insertUserProfileSchema, updateUserProfileSchema, insertGymSchema, updateGymSchema, insertEquipmentSchema, insertWorkoutSessionSchema, insertExerciseLogSchema, updateExerciseLogSchema, suggestAlternativeRequestSchema, suggestAlternativeResponseSchema, trackPromoImpressionSchema, trackAffiliateClickSchema, insertNotificationPreferencesSchema, promoIdParamSchema, promoPlacementParamSchema, generateProgramRequestSchema, exercises, exerciseLogs, workoutSessions, programTemplateExercises, unmappedExercises, equipmentCatalog, exerciseAliases, equipmentAliases, gyms, users, userProfiles, userTimeModel, adminUsers, type ExerciseLog } from "@shared/schema";
 import { z, ZodError } from "zod";
 import { generateWorkoutProgram, generateWorkoutProgramWithReasoner, generateWorkoutProgramWithVersionSwitch, generateWorkoutBlueprintV4WithOpenAI } from "./ai-service";
 import { recognizeEquipmentFromImage } from "./roboflow-service";
@@ -476,6 +476,44 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
         return res.status(404).json({ message: "Profile not found" });
       }
       res.status(500).json({ message: "Failed to update profile" });
+    }
+  });
+
+  // Reset profile values (for onboarding reset)
+  app.post("/api/profile/reset", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      
+      // Reset profile to default values, clearing sport-specific data
+      await db
+        .update(userProfiles)
+        .set({
+          age: null,
+          sex: null,
+          bodyWeight: null,
+          height: null,
+          oneRmBench: null,
+          oneRmOhp: null,
+          oneRmDeadlift: null,
+          oneRmSquat: null,
+          oneRmLatpull: null,
+          goalStrength: 25,
+          goalVolume: 25,
+          goalEndurance: 25,
+          goalCardio: 25,
+          motivationType: null,
+          trainingLevel: null,
+          specificSport: null, // ← CRITICAL: Clear stale sport data
+          sessionsPerWeek: 3,
+          sessionDuration: 60,
+        })
+        .where(eq(userProfiles.userId, userId));
+
+      console.log(`[API] ✅ Reset profile for user ${userId}, cleared specificSport`);
+      res.json({ success: true, message: "Profile reset successfully" });
+    } catch (error) {
+      console.error("[API] ❌ Error resetting profile:", error);
+      res.status(500).json({ message: "Failed to reset profile" });
     }
   });
 
