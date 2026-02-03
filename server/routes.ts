@@ -680,15 +680,29 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
               extendedProfile || undefined,
               job.id
             );
+            console.log("[Onboarding] ✅ Program generated successfully");
             
+            console.log("[Onboarding] 🗑️ Clearing old templates...");
             await storage.clearUserProgramTemplates(userId);
-            await storage.createProgramTemplatesFromAI(userId, program);
-            await storage.updateUserProfile(userId, { currentPassNumber: 1 });
+            console.log("[Onboarding] ✅ Old templates cleared");
             
+            console.log("[Onboarding] 💾 Creating new templates from AI...");
+            await storage.createProgramTemplatesFromAI(userId, program);
+            console.log("[Onboarding] ✅ Templates created successfully");
+            
+            console.log("[Onboarding] 📝 Updating user profile (currentPassNumber = 1)...");
+            await storage.updateUserProfile(userId, { currentPassNumber: 1 });
+            console.log("[Onboarding] ✅ Profile updated successfully");
+            
+            console.log("[Onboarding] 🎉 Marking job as completed...");
             JobManager.updateJob(job.id, { status: 'completed', progress: 100 });
+            console.log("[Onboarding] ✅ Job marked as completed! Job ID:", job.id);
           }
         } catch (programError) {
           console.error("[Onboarding] ❌ Background generation failed:", programError);
+          if (programError instanceof Error) {
+            console.error("[Onboarding] Error stack:", programError.stack);
+          }
           JobManager.updateJob(job.id, { 
             status: 'failed', 
             error: programError instanceof Error ? programError.message : String(programError) 
