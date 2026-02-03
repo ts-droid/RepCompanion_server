@@ -13,7 +13,7 @@ import {
 import { sendMagicLinkEmail } from "./email-service";
 import jwt from "jsonwebtoken";
 import * as schema from "@shared/schema";
-import { insertUserProfileSchema, updateUserProfileSchema, insertGymSchema, updateGymSchema, insertEquipmentSchema, insertWorkoutSessionSchema, insertExerciseLogSchema, updateExerciseLogSchema, suggestAlternativeRequestSchema, suggestAlternativeResponseSchema, trackPromoImpressionSchema, trackAffiliateClickSchema, insertNotificationPreferencesSchema, promoIdParamSchema, promoPlacementParamSchema, generateProgramRequestSchema, exercises, exerciseLogs, workoutSessions, programTemplateExercises, unmappedExercises, equipmentCatalog, exerciseAliases, equipmentAliases, gyms, users, userProfiles, userTimeModel, adminUsers, type ExerciseLog } from "@shared/schema";
+import { insertUserProfileSchema, updateUserProfileSchema, insertGymSchema, updateGymSchema, insertEquipmentSchema, insertWorkoutSessionSchema, insertExerciseLogSchema, updateExerciseLogSchema, suggestAlternativeRequestSchema, suggestAlternativeResponseSchema, trackPromoImpressionSchema, trackAffiliateClickSchema, insertNotificationPreferencesSchema, promoIdParamSchema, promoPlacementParamSchema, generateProgramRequestSchema, insertAiPromptSchema, aiPrompts, exercises, exerciseLogs, workoutSessions, programTemplateExercises, unmappedExercises, equipmentCatalog, exerciseAliases, equipmentAliases, gyms, users, userProfiles, userTimeModel, adminUsers, type ExerciseLog } from "@shared/schema";
 import { z, ZodError } from "zod";
 import { generateWorkoutProgram, generateWorkoutProgramWithReasoner, generateWorkoutProgramWithVersionSwitch, generateWorkoutBlueprintV4WithOpenAI } from "./ai-service";
 import { recognizeEquipmentFromImage } from "./roboflow-service";
@@ -658,6 +658,21 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
         equipmentRegistered: equipmentRegistered || !!selectedGymId,
         selectedGymId: gymIdToUse,
       });
+
+      // Check if there's already an active generation job for this user
+      const activeJob = JobManager.getUserActiveJob(userId);
+      if (activeJob) {
+        console.log("[Onboarding] ⏳ Job already in progress for user:", userId, "Job ID:", activeJob.id);
+        return res.json({ 
+          success: true, 
+          profile: finalProfile, 
+          gym: firstGym,
+          program: {
+            jobId: activeJob.id,
+            status: activeJob.status
+          }
+        });
+      }
 
       // Create a background job for program generation
       const job = JobManager.createJob(userId);
@@ -2613,6 +2628,37 @@ Svara ENDAST med ett JSON-objekt i följande format (ingen annan text):
   });
 
   // ========== ADMIN ROUTES ==========
+
+  app.get("/api/admin/prompts", requireAdminAuth, async (_req, res) => {
+    try {
+      const prompts = await storage.getAllAiPrompts();
+      res.json(prompts);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch prompts" });
+    }
+  });
+
+  app.post("/api/admin/prompts", requireAdminAuth, async (req, res) => {
+    try {
+      const promptData = insertAiPromptSchema.parse(req.body);
+      const prompt = await storage.upsertAiPrompt(promptData);
+      res.json(prompt);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return res.status(400).json({ message: "Validation error", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to save prompt" });
+    }
+  });
+
+  app.delete("/api/admin/prompts/:id", requireAdminAuth, async (req, res) => {
+    try {
+      await storage.deleteAiPrompt(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete prompt" });
+    }
+  });
 
   app.get("/api/admin/unmapped-exercises", requireAdminAuth, async (req: any, res) => {
     try {

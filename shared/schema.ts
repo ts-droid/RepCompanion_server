@@ -477,6 +477,15 @@ export const userSubscriptions = pgTable("user_subscriptions", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// AI Prompts - stores system and user prompt templates
+export const aiPrompts = pgTable("ai_prompts", {
+  id: varchar("id").primaryKey(), // e.g., "v4-blueprint-system", "v4.5-blueprint-system"
+  version: varchar("version", { length: 20 }).notNull(), // "v4", "v4.5", etc.
+  promptType: varchar("prompt_type", { length: 50 }).notNull(), // "system", "user", "analysis"
+  content: text("content").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // ========== SCHEMA EXPORTS ==========
 
 export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({
@@ -662,6 +671,12 @@ export const insertUnmappedExerciseSchema = createInsertSchema(unmappedExercises
   createdAt: true,
   firstSeen: true,
   lastSeen: true,
+}).extend({
+  id: z.string(),
+});
+
+export const insertAiPromptSchema = createInsertSchema(aiPrompts).omit({
+  updatedAt: true,
 });
 
 export type UserProfile = typeof userProfiles.$inferSelect;
@@ -741,6 +756,9 @@ export type InsertCandidatePool = z.infer<typeof insertCandidatePoolSchema>;
 
 export type UnmappedExercise = typeof unmappedExercises.$inferSelect;
 export type InsertUnmappedExercise = typeof unmappedExercises.$inferInsert;
+
+export type AiPrompt = typeof aiPrompts.$inferSelect;
+export type InsertAiPrompt = z.infer<typeof insertAiPromptSchema>;
 
 // ========== HEALTH DATA INTEGRATION (Vital API) ==========
 

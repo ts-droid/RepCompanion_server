@@ -35,6 +35,8 @@ import {
   type TrainingTip,
   type InsertTrainingTip,
   type ProfileTrainingTip,
+  type AiPrompt,
+  type InsertAiPrompt,
   users,
   userProfiles,
   gyms,
@@ -59,6 +61,7 @@ import {
   equipmentAliases,
   userTimeModel,
   candidatePools,
+  aiPrompts,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, gte, sql, inArray, isNull, isNotNull } from "drizzle-orm";
@@ -148,6 +151,13 @@ export interface IStorage {
   getPersonalizedTips(userId: string, limit?: number): Promise<ProfileTrainingTip[]>;
   getProfileTipsByCategory(userId: string, category: string, limit?: number): Promise<ProfileTrainingTip[]>;
   
+  // Prompt operations
+  getAiPrompt(id: string): Promise<AiPrompt | undefined>;
+  getAiPromptsByVersion(version: string): Promise<AiPrompt[]>;
+  getAllAiPrompts(): Promise<AiPrompt[]>;
+  upsertAiPrompt(prompt: InsertAiPrompt): Promise<AiPrompt>;
+  deleteAiPrompt(id: string): Promise<void>;
+
   // Exercise catalog operations
   getExerciseByName(name: string): Promise<{ id: string; name: string; nameEn: string | null; youtubeUrl: string | null; videoType: string | null } | undefined>;
   getExercisesByNames(names: string[]): Promise<{ id: string; name: string; nameEn: string | null; youtubeUrl: string | null; videoType: string | null }[]>;
@@ -1179,9 +1189,6 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async clearUserProgramTemplates(userId: string): Promise<void> {
-    await db.delete(programTemplates).where(eq(programTemplates.userId, userId));
-  }
 
   /**
    * Calculate suggested weight based on user's 1RM values and target reps
@@ -2036,6 +2043,43 @@ export class DatabaseStorage implements IStorage {
     await db.update(users)
       .set({ lastActiveAt: new Date() })
       .where(eq(users.id, userId));
+  }
+
+  // AI Prompt operations
+  async getAiPrompt(id: string): Promise<AiPrompt | undefined> {
+    const [prompt] = await db.select().from(aiPrompts).where(eq(aiPrompts.id, id));
+    return prompt;
+  }
+
+  async getAiPromptsByVersion(version: string): Promise<AiPrompt[]> {
+    return await db.select().from(aiPrompts).where(eq(aiPrompts.version, version));
+  }
+
+  async getAllAiPrompts(): Promise<AiPrompt[]> {
+    return await db.select().from(aiPrompts).orderBy(desc(aiPrompts.updatedAt));
+  }
+
+  async upsertAiPrompt(promptData: InsertAiPrompt): Promise<AiPrompt> {
+    const [existing] = await db.select().from(aiPrompts).where(eq(aiPrompts.id, promptData.id));
+
+    if (existing) {
+      const [updated] = await db
+        .update(aiPrompts)
+        .set({
+          ...promptData,
+          updatedAt: new Date(),
+        })
+        .where(eq(aiPrompts.id, promptData.id))
+        .returning();
+      return updated;
+    } else {
+      const [inserted] = await db.insert(aiPrompts).values(promptData).returning();
+      return inserted;
+    }
+  }
+
+  async deleteAiPrompt(id: string): Promise<void> {
+    await db.delete(aiPrompts).where(eq(aiPrompts.id, id));
   }
 }
 

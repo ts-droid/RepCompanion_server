@@ -501,9 +501,15 @@ export async function generateWorkoutProgramV4WithOpenAI(
   const candidatePools: V4Prompts.V4CandidatePools = {};
   pools.forEach(p => Object.assign(candidatePools, p.buckets));
 
+  // Fetch prompts from DB or fallback
+  const dbPromptV4 = await storage.getAiPrompt("v4-blueprint-system");
+  const dbPromptV4_5 = await storage.getAiPrompt("v4.5-blueprint-system");
+  const systemPromptV4 = dbPromptV4 ? dbPromptV4.content : V4Prompts.buildBlueprintSystemPromptV4();
+  const systemPromptV4_5 = dbPromptV4_5 ? dbPromptV4_5.content : V4Prompts.buildBlueprintSystemPromptV4_5();
+
   const blueprintResult = await executeWithFallback(
     [
-      { role: "system", content: ((profileData.sessionsPerWeek || 3) <= 3) ? V4Prompts.buildBlueprintSystemPromptV4_5() : V4Prompts.buildBlueprintSystemPromptV4() },
+      { role: "system", content: ((profileData.sessionsPerWeek || 3) <= 3) ? systemPromptV4_5 : systemPromptV4 },
       { role: "user", content: V4Prompts.buildBlueprintUserPromptV4({
         schedule: {
           sessions_per_week: profileData.sessionsPerWeek || 3,
@@ -594,9 +600,15 @@ export async function generateWorkoutBlueprintV4WithOpenAI(
   const candidatePools: V4Prompts.V4CandidatePools = {};
   pools.forEach(p => Object.assign(candidatePools, p.buckets));
 
+  // Fetch prompts from DB or fallback
+  const dbPromptV4B = await storage.getAiPrompt("v4-blueprint-system");
+  const dbPromptV4_5B = await storage.getAiPrompt("v4.5-blueprint-system");
+  const sysV4B = dbPromptV4B ? dbPromptV4B.content : V4Prompts.buildBlueprintSystemPromptV4();
+  const sysV4_5B = dbPromptV4_5B ? dbPromptV4_5B.content : V4Prompts.buildBlueprintSystemPromptV4_5();
+
   const blueprintResult = await executeWithFallback(
     [
-      { role: "system", content: ((profileData.sessionsPerWeek || 3) <= 3) ? V4Prompts.buildBlueprintSystemPromptV4_5() : V4Prompts.buildBlueprintSystemPromptV4() },
+      { role: "system", content: ((profileData.sessionsPerWeek || 3) <= 3) ? sysV4_5B : sysV4B },
       { role: "user", content: V4Prompts.buildBlueprintUserPromptV4({
         schedule: {
           sessions_per_week: profileData.sessionsPerWeek || 3,

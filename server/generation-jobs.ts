@@ -32,6 +32,12 @@ export const JobManager = {
     return jobs.get(id);
   },
 
+  getUserActiveJob(userId: string): GenerationJob | undefined {
+    return Array.from(jobs.values()).find(
+      (job) => job.userId === userId && (job.status === 'queued' || job.status === 'generating')
+    );
+  },
+
   updateJob(id: string, updates: Partial<Omit<GenerationJob, 'id' | 'userId' | 'createdAt'>>): GenerationJob | undefined {
     const job = jobs.get(id);
     if (!job) return undefined;
