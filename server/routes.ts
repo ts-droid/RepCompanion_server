@@ -889,8 +889,54 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
     }
   });
 
+  // ========== GYM CAMPAIGN ROUTES ==========
+
+  // Public endpoint — no auth required (shown on app launch before login)
+  app.get("/api/gym-campaigns/active", async (_req, res) => {
+    try {
+      const campaigns = await storage.getActiveGymCampaigns();
+      res.json(campaigns);
+    } catch (error) {
+      console.error("[GymCampaigns] Failed to fetch active campaigns:", error);
+      res.status(500).json({ message: "Failed to fetch campaigns" });
+    }
+  });
+
+  // Admin: create campaign (dev/admin only)
+  app.post("/api/gym-campaigns", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const campaign = await storage.createGymCampaign(req.body);
+      res.status(201).json(campaign);
+    } catch (error) {
+      console.error("[GymCampaigns] Failed to create campaign:", error);
+      res.status(500).json({ message: "Failed to create campaign" });
+    }
+  });
+
+  // Admin: update campaign
+  app.patch("/api/gym-campaigns/:id", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const campaign = await storage.updateGymCampaign(req.params.id, req.body);
+      res.json(campaign);
+    } catch (error) {
+      console.error("[GymCampaigns] Failed to update campaign:", error);
+      res.status(500).json({ message: "Failed to update campaign" });
+    }
+  });
+
+  // Admin: delete campaign
+  app.delete("/api/gym-campaigns/:id", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      await storage.deleteGymCampaign(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("[GymCampaigns] Failed to delete campaign:", error);
+      res.status(500).json({ message: "Failed to delete campaign" });
+    }
+  });
+
   // ========== EQUIPMENT ROUTES ==========
-  
+
   app.get("/api/equipment", isAuthenticatedOrDev, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;

@@ -37,6 +37,8 @@ import {
   type ProfileTrainingTip,
   type AiPrompt,
   type InsertAiPrompt,
+  type GymCampaign,
+  type InsertGymCampaign,
   users,
   userProfiles,
   gyms,
@@ -62,6 +64,7 @@ import {
   userTimeModel,
   candidatePools,
   aiPrompts,
+  gymCampaigns,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, gte, sql, inArray, isNull, isNotNull } from "drizzle-orm";
@@ -157,6 +160,12 @@ export interface IStorage {
   getAllAiPrompts(): Promise<AiPrompt[]>;
   upsertAiPrompt(prompt: InsertAiPrompt): Promise<AiPrompt>;
   deleteAiPrompt(id: string): Promise<void>;
+
+  // Gym campaign operations
+  getActiveGymCampaigns(): Promise<GymCampaign[]>;
+  createGymCampaign(campaign: InsertGymCampaign): Promise<GymCampaign>;
+  updateGymCampaign(id: string, data: Partial<InsertGymCampaign>): Promise<GymCampaign>;
+  deleteGymCampaign(id: string): Promise<void>;
 
   // Exercise catalog operations
   getExerciseByName(name: string): Promise<{ id: string; name: string; nameEn: string | null; youtubeUrl: string | null; videoType: string | null } | undefined>;
@@ -2125,6 +2134,44 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAiPrompt(id: string): Promise<void> {
     await db.delete(aiPrompts).where(eq(aiPrompts.id, id));
+  }
+
+  // ========== GYM CAMPAIGN OPERATIONS ==========
+
+  async getActiveGymCampaigns(): Promise<GymCampaign[]> {
+    const now = new Date();
+    return await db
+      .select()
+      .from(gymCampaigns)
+      .where(
+        and(
+          eq(gymCampaigns.isActive, true),
+          sql`${gymCampaigns.startsAt} <= ${now}`,
+          or(
+            isNull(gymCampaigns.endsAt),
+            sql`${gymCampaigns.endsAt} > ${now}`
+          )
+        )
+      )
+      .orderBy(desc(gymCampaigns.createdAt));
+  }
+
+  async createGymCampaign(campaign: InsertGymCampaign): Promise<GymCampaign> {
+    const [created] = await db.insert(gymCampaigns).values(campaign).returning();
+    return created;
+  }
+
+  async updateGymCampaign(id: string, data: Partial<InsertGymCampaign>): Promise<GymCampaign> {
+    const [updated] = await db
+      .update(gymCampaigns)
+      .set(data)
+      .where(eq(gymCampaigns.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteGymCampaign(id: string): Promise<void> {
+    await db.delete(gymCampaigns).where(eq(gymCampaigns.id, id));
   }
 }
 
