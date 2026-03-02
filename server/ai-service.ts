@@ -374,10 +374,12 @@ function getClientConfig(provider: string): { client: OpenAI; provider: string; 
 async function executeWithFallback(
   messages: any[],
   responseFormat: any,
-  logPrefix: string
+  logPrefix: string,
+  timeoutMs?: number
 ): Promise<{ content: string; provider: string }> {
   let lastError: any;
   const attemptedProviders: string[] = [];
+  const timeout = timeoutMs ?? Number(process.env.AI_PROVIDER_TIMEOUT_MS || 45000);
 
   for (const providerName of PROVIDER_PRIORITY) {
     const config = getClientConfig(providerName);
@@ -385,9 +387,8 @@ async function executeWithFallback(
     
     try {
       console.log(`[${logPrefix}] 🔄 Attempting generation with ${config.provider} (${config.model})...`);
-      const timeoutMs = 45000; 
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error("Request timed out")), timeoutMs);
+        setTimeout(() => reject(new Error("Request timed out")), timeout);
       });
 
       const apiPromise = config.client.chat.completions.create({
@@ -483,7 +484,8 @@ export async function generateWorkoutProgramV4WithOpenAI(
       }) }
     ],
     { type: "json_object" },
-    "V4 Analysis"
+    "V4 Analysis",
+    Number(process.env.AI_ANALYSIS_TIMEOUT_MS || 45000)
   );
 
   const analysis = v4AnalysisSchema.parse(safeParseJSON(analysisResult.content, "V4 Analysis"));
@@ -533,7 +535,8 @@ export async function generateWorkoutProgramV4WithOpenAI(
       }) }
     ],
     { type: "json_object" },
-    "V4 Blueprint"
+    "V4 Blueprint",
+    Number(process.env.AI_BLUEPRINT_TIMEOUT_MS || 120000)
   );
 
   const blueprint = v4BlueprintSchema.parse(safeParseJSON(blueprintResult.content, "V4 Blueprint"));
@@ -585,7 +588,8 @@ export async function generateWorkoutBlueprintV4WithOpenAI(
       }) }
     ],
     { type: "json_object" },
-    "V4 Analysis"
+    "V4 Analysis",
+    Number(process.env.AI_ANALYSIS_TIMEOUT_MS || 45000)
   );
 
   const analysis = v4AnalysisSchema.parse(safeParseJSON(analysisResult.content, "V4 Analysis"));
@@ -632,7 +636,8 @@ export async function generateWorkoutBlueprintV4WithOpenAI(
       }) }
     ],
     { type: "json_object" },
-    "V4 Blueprint"
+    "V4 Blueprint",
+    Number(process.env.AI_BLUEPRINT_TIMEOUT_MS || 120000)
   );
 
   const blueprint = v4BlueprintSchema.parse(safeParseJSON(blueprintResult.content, "V4 Blueprint"));
