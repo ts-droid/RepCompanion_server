@@ -4,9 +4,10 @@
  * This is more reliable than drizzle-kit migrate in production
  */
 
-import { drizzle } from 'drizzle-orm/neon-http';
-import { neon } from '@neondatabase/serverless';
-import { migrate } from 'drizzle-orm/neon-http/migrator';
+import pkg from 'pg';
+const { Client } = pkg;
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
 
 
 async function runMigrations() {
@@ -18,12 +19,14 @@ async function runMigrations() {
   console.log('[MIGRATE] 🔄 Starting database migrations...');
   
   try {
-    const sql = neon(process.env.DATABASE_URL);
-    const db = drizzle(sql);
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    const db = drizzle(client);
     
     console.log('[MIGRATE] 📂 Reading migrations from ./migrations');
     
     await migrate(db, { migrationsFolder: './migrations' });
+    await client.end();
     
     console.log('[MIGRATE] ✅ All migrations completed successfully!');
     process.exit(0);
