@@ -935,6 +935,56 @@ app.post("/api/profile/suggest-onerm", isAuthenticatedOrDev, async (req: any, re
     }
   });
 
+  // ========== BODY MEASUREMENTS ==========
+
+  app.get("/api/body-measurements", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { eq } = await import("drizzle-orm");
+      const { bodyMeasurements } = await import("../shared/schema.js");
+      const results = await (req.app.locals.db as any)
+        .select()
+        .from(bodyMeasurements)
+        .where(eq(bodyMeasurements.userId, userId))
+        .orderBy(bodyMeasurements.date);
+      res.json(results);
+    } catch (error) {
+      console.error("[BodyMeasurements] GET error:", error);
+      res.status(500).json({ message: "Failed to fetch body measurements" });
+    }
+  });
+
+  app.post("/api/body-measurements", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { bodyMeasurements, insertBodyMeasurementSchema } = await import("../shared/schema.js");
+      const parsed = insertBodyMeasurementSchema.parse(req.body);
+      const [result] = await (req.app.locals.db as any)
+        .insert(bodyMeasurements)
+        .values({ ...parsed, userId })
+        .returning();
+      res.status(201).json(result);
+    } catch (error) {
+      console.error("[BodyMeasurements] POST error:", error);
+      res.status(500).json({ message: "Failed to create body measurement" });
+    }
+  });
+
+  app.delete("/api/body-measurements/:id([0-9a-fA-F-]{36})", isAuthenticatedOrDev, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { eq, and } = await import("drizzle-orm");
+      const { bodyMeasurements } = await import("../shared/schema.js");
+      await (req.app.locals.db as any)
+        .delete(bodyMeasurements)
+        .where(and(eq(bodyMeasurements.id, req.params.id), eq(bodyMeasurements.userId, userId)));
+      res.json({ success: true });
+    } catch (error) {
+      console.error("[BodyMeasurements] DELETE error:", error);
+      res.status(500).json({ message: "Failed to delete body measurement" });
+    }
+  });
+
   // ========== EQUIPMENT ROUTES ==========
 
   app.get("/api/equipment", isAuthenticatedOrDev, async (req: any, res) => {

@@ -992,3 +992,39 @@ export const updateGymCampaignSchema = insertGymCampaignSchema.partial();
 
 export type GymCampaign = typeof gymCampaigns.$inferSelect;
 export type InsertGymCampaign = typeof gymCampaigns.$inferInsert;
+
+// ========== BODY MEASUREMENTS ==========
+
+export const bodyMeasurements = pgTable("body_measurements", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: varchar("user_id", { length: 255 }).notNull(),
+  date: timestamp("date").notNull(),
+  // Alltid relevant
+  weight: real("weight"),
+  // Viktnedgång / hälsa
+  waist: real("waist"),
+  hips: real("hips"),
+  neck: real("neck"),
+  chest: real("chest"),
+  thighRight: real("thigh_right"),
+  thighLeft: real("thigh_left"),
+  // Muskeluppbyggnad
+  bicepRight: real("bicep_right"),
+  bicepLeft: real("bicep_left"),
+  calfRight: real("calf_right"),
+  calfLeft: real("calf_left"),
+  forearmRight: real("forearm_right"),
+  forearmLeft: real("forearm_left"),
+  shoulders: real("shoulders"),
+  abdomen: real("abdomen"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertBodyMeasurementSchema = createInsertSchema(bodyMeasurements).omit({
+  id: true,
+  createdAt: true,
+  userId: true,
+});
+
+export type BodyMeasurementRecord = typeof bodyMeasurements.$inferSelect;
+export type InsertBodyMeasurement = typeof bodyMeasurements.$inferInsert;
